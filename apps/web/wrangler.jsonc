@@ -4,4 +4,15 @@
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  "vars": {
+    "BETTER_AUTH_URL": "http://localhost:3000"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dac-googlemeet",
+      "database_id": "5b0f11e9-efc8-446c-9a4e-9798448d5ae3",
+      "migrations_dir": "drizzle"
+    }
+  ]
 }

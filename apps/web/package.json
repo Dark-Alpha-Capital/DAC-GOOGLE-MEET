@@ -11,16 +11,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
-    "cf-typegen": "wrangler types", 
-    
+    "cf-typegen": "wrangler types",
     "test": "vitest run",
     "lint": "eslint",
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:pull": "drizzle-kit pull",
+    "db:migrate:local": "wrangler d1 migrations apply dac-googlemeet --local",
+    "db:migrate:remote": "wrangler d1 migrations apply dac-googlemeet --remote",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
