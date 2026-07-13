@@ -5,6 +5,7 @@ import { and, asc, eq, gte } from 'drizzle-orm'
 import { getDb } from '#/db'
 import { meeting, participant } from '#/db/schema'
 import { getAuth } from '#/lib/auth'
+import { scheduleMeetingBot } from '#/lib/schedule-bot'
 
 export type MeetingWithParticipants = {
   id: string
@@ -211,6 +212,22 @@ export const syncMeetingsFromCalendar = createServerFn({
         })),
       )
     }
+
+    const workflowInstanceId = await scheduleMeetingBot({
+      meetingId,
+      meetLink,
+      startsAt,
+      endsAt,
+      status,
+      previousStartsAtMs: existing?.startsAt.getTime(),
+      previousMeetLink: existing?.meetLink,
+      previousWorkflowInstanceId: existing?.workflowInstanceId,
+    })
+
+    await db
+      .update(meeting)
+      .set({ workflowInstanceId })
+      .where(eq(meeting.id, meetingId))
 
     synced += 1
   }
