@@ -1,18 +1,29 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "dac-google-meet",
-  "compatibility_date": "2025-09-02",
-  "compatibility_flags": ["nodejs_compat"],
-  "main": "@tanstack/react-start/server-entry",
-  "vars": {
-    "BETTER_AUTH_URL": "http://localhost:3000"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "dac-googlemeet",
-      "database_id": "5b0f11e9-efc8-446c-9a4e-9798448d5ae3",
-      "migrations_dir": "drizzle"
-    }
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "dac-google-meet",
+	"compatibility_date": "2025-09-02",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"main": "@tanstack/react-start/server-entry",
+	"vars": {
+		"BETTER_AUTH_URL": "https://meeting.darkalphacapital.com",
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "dac-googlemeet",
+			"database_id": "5b0f11e9-efc8-446c-9a4e-9798448d5ae3",
+			"migrations_dir": "drizzle",
+		},
+	],
+	"routes": [
+		{
+			"pattern": "meeting.darkalphacapital.com",
+			"zone_name": "darkalphacapital.com",
+			"custom_domain": true,
+			"enabled": true,
+			"previews_enabled": false
+		}
+	],
 }
