@@ -1,5 +1,10 @@
 import { relations, sql } from 'drizzle-orm'
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import {
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core'
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -35,6 +40,7 @@ export const session = sqliteTable('session', {
     .references(() => user.id, { onDelete: 'cascade' }),
 })
 
+/** Google OAuth tokens live here (Better Auth account table). */
 export const account = sqliteTable('account', {
   id: text('id').primaryKey(),
   accountId: text('account_id').notNull(),
@@ -75,19 +81,85 @@ export const verification = sqliteTable('verification', {
     .notNull(),
 })
 
-export const todos = sqliteTable('todos', {
-  id: integer({ mode: 'number' }).primaryKey({
-    autoIncrement: true,
-  }),
-  title: text().notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(
-    sql`(unixepoch())`,
-  ),
+/** Calendar events that include a Google Meet link. */
+export const meeting = sqliteTable(
+  'meeting',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    googleEventId: text('google_event_id').notNull(),
+    title: text('title').notNull(),
+    meetLink: text('meet_link'),
+    startsAt: integer('starts_at', { mode: 'timestamp_ms' }).notNull(),
+    endsAt: integer('ends_at', { mode: 'timestamp_ms' }).notNull(),
+    /** scheduled | cancelled | completed */
+    status: text('status').notNull().default('scheduled'),
+    htmlLink: text('html_link'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('meeting_user_event_uidx').on(table.userId, table.googleEventId),
+  ],
+)
+
+/**
+ * Invitees from Google Calendar `attendees`.
+ * These are people invited (with RSVP), NOT who actually joined the Meet.
+ */
+export const participant = sqliteTable(
+  'participant',
+  {
+    id: text('id').primaryKey(),
+    meetingId: text('meeting_id')
+      .notNull()
+      .references(() => meeting.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    displayName: text('display_name'),
+    /** needsAction | declined | tentative | accepted */
+    responseStatus: text('response_status'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('participant_meeting_email_uidx').on(
+      table.meetingId,
+      table.email,
+    ),
+  ],
+)
+
+/** Bot join attempts for a meeting (actual presence lives here later). */
+export const botRun = sqliteTable('bot_run', {
+  id: text('id').primaryKey(),
+  meetingId: text('meeting_id')
+    .notNull()
+    .references(() => meeting.id, { onDelete: 'cascade' }),
+  joinedAt: integer('joined_at', { mode: 'timestamp_ms' }),
+  leftAt: integer('left_at', { mode: 'timestamp_ms' }),
+  /** pending | joining | joined | left | failed */
+  status: text('status').notNull().default('pending'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .$onUpdate(() => new Date())
+    .notNull(),
 })
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
+  meetings: many(meeting),
 }))
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -101,5 +173,28 @@ export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, {
     fields: [account.userId],
     references: [user.id],
+  }),
+}))
+
+export const meetingRelations = relations(meeting, ({ one, many }) => ({
+  user: one(user, {
+    fields: [meeting.userId],
+    references: [user.id],
+  }),
+  participants: many(participant),
+  botRuns: many(botRun),
+}))
+
+export const participantRelations = relations(participant, ({ one }) => ({
+  meeting: one(meeting, {
+    fields: [participant.meetingId],
+    references: [meeting.id],
+  }),
+}))
+
+export const botRunRelations = relations(botRun, ({ one }) => ({
+  meeting: one(meeting, {
+    fields: [botRun.meetingId],
+    references: [meeting.id],
   }),
 }))
