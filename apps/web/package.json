@@ -23,8 +23,10 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@cloudflare/containers": "^0.3.7",
     "@faker-js/faker": "^10.3.0",
     "@hookform/resolvers": "^5.4.0",
+    "@repo/storage": "workspace:*",
     "@shadcn/react": "^0.2.1",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/match-sorter-utils": "latest",

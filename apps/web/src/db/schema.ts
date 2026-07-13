@@ -97,6 +97,8 @@ export const meeting = sqliteTable(
     /** scheduled | cancelled | completed */
     status: text('status').notNull().default('scheduled'),
     htmlLink: text('html_link'),
+    /** Cloudflare Workflow instance id (usually equals meeting id). */
+    workflowInstanceId: text('workflow_instance_id'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -145,8 +147,13 @@ export const botRun = sqliteTable('bot_run', {
     .references(() => meeting.id, { onDelete: 'cascade' }),
   joinedAt: integer('joined_at', { mode: 'timestamp_ms' }),
   leftAt: integer('left_at', { mode: 'timestamp_ms' }),
-  /** pending | joining | joined | left | failed */
+  /**
+   * pending | joining | waiting_admission | joined | left | failed
+   */
   status: text('status').notNull().default('pending'),
+  recordingKey: text('recording_key'),
+  errorMessage: text('error_message'),
+  workflowInstanceId: text('workflow_instance_id'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),

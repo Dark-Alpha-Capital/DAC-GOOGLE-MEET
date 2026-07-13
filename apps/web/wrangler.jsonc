@@ -5,17 +5,47 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	"main": "@tanstack/react-start/server-entry",
+	"main": "src/server.ts",
 	"vars": {
 		"BETTER_AUTH_URL": "https://meeting.darkalphacapital.com",
+		"BOT_DISPLAY_NAME": "DAC Notetaker"
 	},
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_name": "dac-googlemeet",
 			"database_id": "5b0f11e9-efc8-446c-9a4e-9798448d5ae3",
-			"migrations_dir": "drizzle",
-		},
+			"migrations_dir": "drizzle"
+		}
+	],
+	"workflows": [
+		{
+			"name": "meeting-bot-workflow",
+			"binding": "MEETING_BOT_WORKFLOW",
+			"class_name": "MeetingBotWorkflow"
+		}
+	],
+	"containers": [
+		{
+			"class_name": "MeetBotContainer",
+			"image": "../meet-bot/Dockerfile",
+			"instance_type": "standard-2",
+			"max_instances": 20
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "MEET_BOT_CONTAINER",
+				"class_name": "MeetBotContainer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1-meet-bot-container",
+			"new_sqlite_classes": ["MeetBotContainer"]
+		}
 	],
 	"routes": [
 		{
@@ -26,4 +56,7 @@
 			"previews_enabled": false
 		}
 	],
+	"observability": {
+		"enabled": true
+	}
 }
