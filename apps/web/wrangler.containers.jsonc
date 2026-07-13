@@ -59,8 +59,7 @@
 	"observability": {
 		"enabled": true
 	},
-	// Skip Docker image builds during vite/wrangler local dev (use `bun run dev:containers` to enable).
 	"dev": {
-		"enable_containers": false
+		"enable_containers": true
 	}
 }

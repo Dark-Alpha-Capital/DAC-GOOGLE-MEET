@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/server.ts"
+    "dev": "tsx src/server.ts",
+    "docker:build": "docker build -t meet-bot .",
+    "docker:run": "docker run --rm -p 8080:8080 meet-bot"
   },
   "dependencies": {
     "puppeteer-core": "^24.22.0"

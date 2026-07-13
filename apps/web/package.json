@@ -7,10 +7,12 @@
   },
   "scripts": {
     "dev": "vite dev --port 3000",
+    "dev:containers": "ENABLE_CONTAINERS=1 vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run build && wrangler deploy --containers-rollout=none",
+    "deploy:containers": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "test": "vitest run",
     "lint": "eslint",
