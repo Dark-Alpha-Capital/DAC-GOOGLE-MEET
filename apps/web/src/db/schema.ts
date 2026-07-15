@@ -151,7 +151,12 @@ export const botRun = sqliteTable('bot_run', {
    * pending | joining | waiting_admission | joined | left | failed
    */
   status: text('status').notNull().default('pending'),
+  /** Nextcloud key for audio recording (.webm) */
   recordingKey: text('recording_key'),
+  /** Nextcloud key for transcript (.txt) */
+  transcriptKey: text('transcript_key'),
+  /** Plain-text transcript for LLM / UI */
+  transcriptText: text('transcript_text'),
   errorMessage: text('error_message'),
   workflowInstanceId: text('workflow_instance_id'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' })

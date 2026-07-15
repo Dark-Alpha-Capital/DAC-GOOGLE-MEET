@@ -25,6 +25,9 @@
 			"class_name": "MeetingBotWorkflow"
 		}
 	],
+	"ai": {
+		"binding": "AI"
+	},
 	"containers": [
 		{
 			"class_name": "MeetBotContainer",

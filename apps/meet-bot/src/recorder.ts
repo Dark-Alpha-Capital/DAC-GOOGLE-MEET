@@ -235,24 +235,39 @@ export class AudioRecorder {
 
     let recordingKey: string | null = null
     let recordingUrl: string | null = null
+    let transcriptKey: string | null = null
+    let transcriptUrl: string | null = null
     try {
       const json = JSON.parse(text) as {
         recordingKey?: string | null
         recordingUrl?: string | null
+        transcriptKey?: string | null
+        transcriptUrl?: string | null
+        transcriptPreview?: string | null
       }
       recordingKey = json.recordingKey ?? null
       recordingUrl = json.recordingUrl ?? null
+      transcriptKey = json.transcriptKey ?? null
+      transcriptUrl = json.transcriptUrl ?? null
+      if (json.transcriptPreview) {
+        console.log(
+          `[recorder] transcript preview: ${json.transcriptPreview}`,
+        )
+      }
     } catch {
       // non-JSON ok
     }
 
     log(
-      `complete ok hadFile=${hadFile} key=${recordingKey ?? 'none'} url=${recordingUrl ?? 'none'}`,
+      `complete ok hadFile=${hadFile} audio=${recordingKey ?? 'none'} transcript=${transcriptKey ?? 'none'}`,
     )
     if (recordingUrl) {
-      console.log(`[recorder] Nextcloud recording: ${recordingUrl}`)
+      console.log(`[recorder] Nextcloud audio: ${recordingUrl}`)
+    }
+    if (transcriptUrl) {
+      console.log(`[recorder] Nextcloud transcript: ${transcriptUrl}`)
     } else if (recordingKey) {
-      console.log(`[recorder] Nextcloud recording key: ${recordingKey}`)
+      console.log(`[recorder] Nextcloud audio key: ${recordingKey}`)
     }
 
     try {

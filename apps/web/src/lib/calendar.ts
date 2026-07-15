@@ -16,6 +16,8 @@ export type BotRunSummary = {
   joinedAt: Date | null
   leftAt: Date | null
   recordingKey: string | null
+  transcriptKey: string | null
+  transcriptText: string | null
   errorMessage: string | null
   createdAt: Date
 }
@@ -181,19 +183,20 @@ export const syncMeetingsFromCalendar = createServerFn({
 
     seenGoogleIds.add(event.id)
 
-    const status =
-      event.status === 'cancelled'
-        ? 'cancelled'
-        : endsAt.getTime() < Date.now()
-          ? 'completed'
-          : 'scheduled'
-
     const existing = await db.query.meeting.findFirst({
       where: and(
         eq(meeting.userId, session.user.id),
         eq(meeting.googleEventId, event.id),
       ),
     })
+
+    const status =
+      event.status === 'cancelled'
+        ? 'cancelled'
+        : // Keep bot-completed meetings completed even if Calendar end is still in the future
+          existing?.status === 'completed' || endsAt.getTime() < Date.now()
+          ? 'completed'
+          : 'scheduled'
 
     const meetingId = existing?.id ?? newId()
 
@@ -346,7 +349,11 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
         Date.now(),
         row.startsAt.getTime() - 5 * 60 * 1000,
       )
-      const latest = row.botRuns[0] ?? null
+      const latest =
+        row.botRuns.find((r) => r.status === 'left') ??
+        row.botRuns.find((r) => r.status === 'joined') ??
+        row.botRuns[0] ??
+        null
       return {
         id: row.id,
         googleEventId: row.googleEventId,
@@ -375,6 +382,8 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
               joinedAt: latest.joinedAt,
               leftAt: latest.leftAt,
               recordingKey: latest.recordingKey,
+              transcriptKey: latest.transcriptKey,
+              transcriptText: latest.transcriptText,
               errorMessage: latest.errorMessage,
               createdAt: latest.createdAt,
             }

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '#/db'
 import { botRun, meeting } from '#/db/schema'
 import { getStorage } from '#/lib/storage'
+import { transcribeAudio } from '#/lib/transcribe'
 import type { RecordingDonePayload } from '#/workflows/meeting-bot'
 
 function unauthorized() {
@@ -49,11 +50,14 @@ export const Route = createFileRoute('/api/bot/complete')({
           return Response.json({ error: 'Missing fields' }, { status: 400 })
         }
 
-        let status: RecordingDonePayload['status'] =
+        const status: RecordingDonePayload['status'] =
           statusRaw === 'failed' ? 'failed' : 'left'
 
         let recordingKey: string | null = null
         let recordingUrl: string | null = null
+        let transcriptKey: string | null = null
+        let transcriptUrl: string | null = null
+        let transcriptText: string | null = null
         let uploadError: string | null = null
 
         const meetingRow = await getDb().query.meeting.findFirst({
@@ -61,51 +65,70 @@ export const Route = createFileRoute('/api/bot/complete')({
         })
         const titleSlug = slugify(meetingRow?.title ?? 'meeting')
         const day = dateStamp(meetingRow?.startsAt ?? new Date())
+        const folder = `transcripts/${day}/${titleSlug}`
 
         if (file instanceof File && file.size > 0) {
-          recordingKey = `recordings/${day}/${titleSlug}/${botRunId}.webm`
+          // Audio-only webm from the bot MediaRecorder (not full video)
+          recordingKey = `${folder}/${botRunId}.webm`
+          transcriptKey = `${folder}/${botRunId}.txt`
           try {
             const bytes = await file.arrayBuffer()
-            const put = await getStorage().put(recordingKey, bytes, {
+            const putAudio = await getStorage().put(recordingKey, bytes, {
               contentType: file.type || 'audio/webm',
             })
-            recordingUrl = put.url
+            recordingUrl = putAudio.url
             console.log(
-              `[bot/complete] Nextcloud upload ok key=${recordingKey} url=${recordingUrl} size=${bytes.byteLength}`,
+              `[bot/complete] audio upload ok key=${recordingKey} size=${bytes.byteLength}`,
             )
+
+            try {
+              transcriptText = await transcribeAudio(env.AI, bytes)
+              const putTxt = await getStorage().put(
+                transcriptKey,
+                transcriptText,
+                { contentType: 'text/plain; charset=utf-8' },
+              )
+              transcriptUrl = putTxt.url
+              console.log(
+                `[bot/complete] transcript ok key=${transcriptKey} chars=${transcriptText.length}`,
+              )
+            } catch (error) {
+              const msg =
+                error instanceof Error ? error.message : String(error)
+              console.error(`[bot/complete] transcription FAILED:`, msg)
+              uploadError = `transcript: ${msg}`
+              transcriptKey = null
+              transcriptText = null
+            }
           } catch (error) {
             uploadError =
               error instanceof Error ? error.message : String(error)
             console.error(
-              `[bot/complete] Nextcloud upload FAILED key=${recordingKey}:`,
+              `[bot/complete] audio upload FAILED key=${recordingKey}:`,
               uploadError,
             )
-            // Keep status as left/failed so workflow can finalize; surface upload error
             recordingKey = null
             recordingUrl = null
+            transcriptKey = null
           }
         } else {
           console.log(
-            `[bot/complete] no recording file for botRun=${botRunId} status=${status}`,
+            `[bot/complete] no audio file for botRun=${botRunId} status=${status}`,
           )
         }
 
         const combinedError =
-          [errorMessage, uploadError ? `upload: ${uploadError}` : null]
+          [errorMessage, uploadError]
             .filter(Boolean)
             .join(' | ') || null
-
-        // If upload failed on an otherwise successful leave, still mark left
-        // so UI/DB leave the "joined/recording" state.
-        if (uploadError && status === 'left' && !errorMessage) {
-          // leave status stays — recording just missing
-        }
 
         await getDb()
           .update(botRun)
           .set({
             status,
             recordingKey,
+            transcriptKey,
+            transcriptText,
             errorMessage: combinedError,
             leftAt: new Date(),
           })
@@ -143,8 +166,11 @@ export const Route = createFileRoute('/api/bot/complete')({
           ok: true,
           recordingKey,
           recordingUrl,
-          uploadError,
+          transcriptKey,
+          transcriptUrl,
+          transcriptPreview: transcriptText?.slice(0, 280) ?? null,
           status,
+          uploadError,
         })
       },
     },

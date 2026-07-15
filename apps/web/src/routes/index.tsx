@@ -55,9 +55,11 @@ function botStatusLabel(run: MeetingWithParticipants['latestBotRun']) {
     case 'joined':
       return 'bot: in call / recording'
     case 'left':
-      return run.recordingKey
-        ? 'bot: completed · recording saved'
-        : 'bot: completed · no recording'
+      return run.transcriptKey || run.transcriptText
+        ? 'bot: completed · transcript ready'
+        : run.recordingKey
+          ? 'bot: completed · audio saved'
+          : 'bot: completed · no audio'
     case 'failed':
       return `bot: failed${run.errorMessage ? ` · ${run.errorMessage}` : ''}`
     default:
@@ -95,8 +97,14 @@ function MeetingRow({ item }: { item: MeetingWithParticipants }) {
           meeting={item.status}
           {run.joinedAt ? ` · joined ${formatWhen(run.joinedAt)}` : ''}
           {run.leftAt ? ` · left ${formatWhen(run.leftAt)}` : ''}
-          {run.recordingKey ? ` · recording ${run.recordingKey}` : ''}
+          {run.recordingKey ? ` · audio ${run.recordingKey}` : ''}
+          {run.transcriptKey ? ` · transcript ${run.transcriptKey}` : ''}
         </p>
+      ) : null}
+      {run?.transcriptText ? (
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-black/5 p-3 text-xs text-[var(--sea-ink)]">
+          {run.transcriptText}
+        </pre>
       ) : null}
 
       <p className="mt-1 font-mono text-xs text-[var(--sea-ink-soft)]">

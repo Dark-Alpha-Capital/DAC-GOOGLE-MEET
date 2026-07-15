@@ -332,76 +332,165 @@ async function pageBody(page: Page) {
 
 async function isBlockedFromMeeting(page: Page) {
   const body = await pageBody(page)
+  // Do NOT match Meet's generic safety footer:
+  // "No one can join a meeting unless invited or admitted by the host"
+  // — that text also appears on the "removed / denied" screen.
   return (
     body.includes("you can't join this video call") ||
     body.includes('you cant join this video call') ||
     body.includes("can't join this call") ||
-    body.includes('no one can join a meeting unless invited or admitted')
+    body.includes("you can't join this call")
+  )
+}
+
+/** Host denied ask-to-join or removed the bot from the lobby/call. */
+async function isDeniedOrRemoved(page: Page) {
+  const body = await pageBody(page)
+  return (
+    body.includes("you've been removed") ||
+    body.includes('you have been removed') ||
+    body.includes('you were removed') ||
+    body.includes('denied entry') ||
+    body.includes('entry denied') ||
+    body.includes("couldn't join") ||
+    body.includes('could not join') ||
+    (body.includes('returning to home screen') &&
+      !body.includes('leave call') &&
+      !body.includes('ready to join'))
   )
 }
 
 async function isPreJoin(page: Page) {
   const body = await pageBody(page)
+  // Exact pre-join screen — avoid matching in-call controls
   return (
-    body.includes('ready to join') ||
-    body.includes('ask to join') ||
-    body.includes('join now') ||
-    body.includes('other ways to join')
+    body.includes('ready to join?') ||
+    body.includes('ready to join') && body.includes('other ways to join') ||
+    (body.includes('ask to join') && body.includes('ready to join'))
   )
 }
 
+/** True only on the lobby / knocker screen (not when already in the call). */
 async function isWaitingForHost(page: Page) {
   const body = await pageBody(page)
+  // Never treat live-call UI as lobby. "Meeting host" in the People panel
+  // previously false-triggered vague "waiting for the host" matches.
+  if (await hasInCallToolbar(page)) return false
+
   return (
     body.includes('asking to join') ||
     body.includes('asking to be let in') ||
-    body.includes('waiting for the host') ||
+    body.includes('please wait until a meeting host brings you into the call') ||
+    body.includes('please wait until a meeting host brings you into') ||
     body.includes('you will join the call when someone lets you in') ||
     body.includes('someone will let you in soon') ||
-    body.includes('please wait until a meeting host brings you into') ||
-    body.includes('wait until a meeting host brings you') ||
-    body.includes('you’ll join when someone lets you in') ||
-    body.includes("you'll join when someone lets you in")
+    body.includes("you'll join when someone lets you in") ||
+    body.includes('you’ll join when someone lets you in')
   )
 }
 
+/** Controls that only appear after you are inside the Meet call. */
+async function hasInCallToolbar(page: Page) {
+  return page.evaluate(() => {
+    const leave =
+      document.querySelector('[aria-label*="Leave call" i]') !== null ||
+      document.querySelector('[aria-label*="Leave meeting" i]') !== null
+    if (!leave) {
+      const body = (document.body?.innerText || '').toLowerCase()
+      if (!body.includes('leave call')) return false
+    }
+    const captions =
+      document.querySelector('[aria-label*="caption" i]') !== null ||
+      document.querySelector('[aria-label*="Captions" i]') !== null
+    const present =
+      document.querySelector('[aria-label*="Present now" i]') !== null ||
+      document.querySelector('[aria-label*="Share screen" i]') !== null
+    const people =
+      document.querySelector('[aria-label*="People" i]') !== null ||
+      document.querySelector('[aria-label*="Show everyone" i]') !== null
+    const raise =
+      document.querySelector('[aria-label*="Raise hand" i]') !== null
+    const body = (document.body?.innerText || '').toLowerCase()
+    const bodySignals =
+      body.includes('turn on captions') ||
+      body.includes('raise hand') ||
+      body.includes('present now') ||
+      body.includes('share screen') ||
+      body.includes('send a reaction') ||
+      body.includes('meeting host') ||
+      /contributors?\s*\d+/i.test(body)
+
+    return Boolean(captions || present || people || raise || bodySignals)
+  })
+}
+
 /**
- * Live call only — lobby also shows "Leave call", so require no lobby/prejoin copy.
+ * Live call — lobby can also show Leave call, so require in-call toolbar signals.
  */
 async function isInMeeting(page: Page) {
-  if (await isWaitingForHost(page)) return false
   if (await isPreJoin(page)) return false
-
-  const body = (
-    (await page.evaluate(() => document.body?.innerText || '')) || ''
-  ).toLowerCase()
-  const hasLeave =
-    body.includes('leave call') ||
-    (await page.$('[aria-label*="Leave call" i]')) !== null
-  return hasLeave
+  if (await isWaitingForHost(page)) return false
+  return hasInCallToolbar(page)
 }
 
 async function meetingEndedUi(page: Page) {
   const body = await pageBody(page)
   return (
     body.includes('you left the meeting') ||
-    body.includes('return to home screen') ||
     body.includes("you've been removed") ||
     body.includes('the call ended') ||
     body.includes('this meeting has ended') ||
-    body.includes('rejoin')
+    (body.includes('return to home screen') && !body.includes('leave call')) ||
+    (body.includes('rejoin') && !body.includes('leave call'))
   )
 }
 
+/**
+ * Host left / bot alone. Prefer People-panel contributor count when available.
+ */
 async function isAloneInMeeting(page: Page) {
-  const body = await pageBody(page)
-  return (
-    body.includes("you're the only one here") ||
-    body.includes('you are the only one here') ||
-    body.includes('no one else is in the meeting') ||
-    body.includes('waiting for others to join') ||
-    body.includes('you are the only one in this call')
-  )
+  return page.evaluate(() => {
+    const body = (document.body?.innerText || '').toLowerCase()
+    if (
+      body.includes("you're the only one here") ||
+      body.includes('you are the only one here') ||
+      body.includes('no one else is in the meeting') ||
+      body.includes('you are the only one in this call')
+    ) {
+      return true
+    }
+
+    const contrib = body.match(/contributors?\s*(\d+)/i)
+    if (contrib) {
+      const count = Number(contrib[1])
+      if (count <= 1) return true
+    }
+
+    // Host label gone while still in call → treat as host left
+    const hasMeetingHost = body.includes('meeting host')
+    const someoneLeft =
+      body.includes('has left the meeting') || body.includes('left the meeting')
+    if (someoneLeft && !hasMeetingHost) return true
+
+    return false
+  })
+}
+
+/** Best-effort open People panel so contributor count / host label are readable. */
+async function refreshPeoplePanel(page: Page) {
+  await page.evaluate(() => {
+    const btn = Array.from(
+      document.querySelectorAll('button, div[role="button"]'),
+    ).find((el) => {
+      const a = (el.getAttribute('aria-label') || '').toLowerCase()
+      return (
+        a.includes('people') ||
+        a.includes('show everyone') ||
+        a === 'people'
+      )
+    }) as HTMLElement | undefined
+    btn?.click()
+  }).catch(() => undefined)
 }
 
 export class MeetGuestSession {
@@ -637,20 +726,31 @@ export class MeetGuestSession {
 
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
+      if (await isDeniedOrRemoved(this.page)) {
+        await dumpDebug(this.page, 'denied-or-removed')
+        throw new Error(
+          'Host denied admission or removed the bot from the meeting. Admit "Roghan Kundra" / the bot when it asks to join.',
+        )
+      }
       if (await isBlockedFromMeeting(this.page)) {
         await dumpDebug(this.page, 'blocked-while-waiting')
         throw new Error(
-          "Meet blocked join while waiting (\"You can't join this video call\").",
+          'Meet blocked this browser from joining. Invite the bot Gmail and retry.',
         )
       }
-      if (await isInMeeting(this.page)) return 'joined'
+      if (await isInMeeting(this.page)) {
+        log('in-call toolbar detected — admitted')
+        return 'joined'
+      }
       if (await isWaitingForHost(this.page)) {
         log('waiting for host to admit…')
       } else {
         const snippet = await this.page.evaluate(
           () => (document.body?.innerText || '').slice(0, 200),
         )
-        log(`still not in lobby/meeting yet — preview: ${snippet.replace(/\s+/g, ' ')}`)
+        log(
+          `still not in lobby/meeting yet — preview: ${snippet.replace(/\s+/g, ' ')}`,
+        )
       }
       await Bun.sleep(2000)
     }
@@ -666,8 +766,10 @@ export class MeetGuestSession {
   ) {
     if (!this.page) throw new Error('Session not started')
 
-    const aloneLimitMs = 60_000
+    // Host left / alone → leave quickly (Otter-style)
+    const aloneLimitMs = 20_000
     let aloneSince: number | null = null
+    let tick = 0
 
     while (Date.now() < endsAtMs + 60_000) {
       if (shouldStop?.()) {
@@ -679,6 +781,13 @@ export class MeetGuestSession {
         return
       }
 
+      // Periodically open People so we can see contributor count / Meeting host
+      if (tick % 3 === 0) {
+        await refreshPeoplePanel(this.page)
+        await Bun.sleep(500)
+      }
+      tick += 1
+
       const inCall = await isInMeeting(this.page)
       if (!inCall && !(await isWaitingForHost(this.page))) {
         log('no longer in call/lobby — treating as meeting end')
@@ -688,9 +797,11 @@ export class MeetGuestSession {
       if (inCall && (await isAloneInMeeting(this.page))) {
         if (aloneSince == null) aloneSince = Date.now()
         const aloneFor = Date.now() - aloneSince
-        log(`alone in meeting for ${Math.round(aloneFor / 1000)}s`)
+        log(
+          `host gone / alone in meeting for ${Math.round(aloneFor / 1000)}s — will leave at ${aloneLimitMs / 1000}s`,
+        )
         if (aloneFor >= aloneLimitMs) {
-          log('alone timeout — leaving')
+          log('alone/host-left timeout — leaving')
           return
         }
       } else {

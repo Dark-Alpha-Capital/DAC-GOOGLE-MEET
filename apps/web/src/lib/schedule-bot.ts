@@ -95,6 +95,18 @@ export async function scheduleMeetingBot(input: {
     return null
   }
 
+  // Bot already finished successfully — do not spawn another join on every page refresh
+  const latestRun = await getDb().query.botRun.findFirst({
+    where: eq(botRun.meetingId, input.meetingId),
+    orderBy: [desc(botRun.createdAt)],
+  })
+  if (latestRun?.status === 'left') {
+    console.log(
+      `[workflow] skip meeting=${input.meetingId} — bot already completed (left)`,
+    )
+    return input.previousWorkflowInstanceId ?? null
+  }
+
   const previousId = input.previousWorkflowInstanceId
   const previousStatus = previousId ? await readStatus(previousId) : null
 

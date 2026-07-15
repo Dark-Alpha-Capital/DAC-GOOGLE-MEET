@@ -30,6 +30,23 @@ export const Route = createFileRoute('/api/bot/status')({
           return Response.json({ error: 'Missing fields' }, { status: 400 })
         }
 
+        const existing = await getDb().query.botRun.findFirst({
+          where: eq(botRun.id, body.botRunId),
+        })
+        // Never downgrade a finished run back to joining/joined
+        if (
+          existing &&
+          (existing.status === 'left' || existing.status === 'failed') &&
+          body.status !== 'left' &&
+          body.status !== 'failed'
+        ) {
+          return Response.json({
+            ok: true,
+            skipped: true,
+            reason: `already ${existing.status}`,
+          })
+        }
+
         const patch: {
           status: string
           errorMessage?: string | null
