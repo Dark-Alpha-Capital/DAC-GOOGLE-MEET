@@ -104,10 +104,10 @@ async function runBot(payload: JoinPayload) {
     log('admitted — starting recorder')
     await reportStatus(payload, 'joined')
 
-    recorder.start()
+    await recorder.start(session.getPage())
     status.state = 'recording'
 
-    await session.waitUntilMeetingEnds(payload.endsAtMs)
+    await session.waitUntilMeetingEnds(payload.endsAtMs, () => stopRequested)
 
     status.state = 'leaving'
     log('leaving meeting / uploading recording')
@@ -177,8 +177,22 @@ const server = Bun.serve({
         return Response.json({ error: 'Invalid join payload' }, { status: 400 })
       }
       if (running) {
-        logError('join rejected — bot already running')
-        return Response.json({ error: 'Bot already running' }, { status: 409 })
+        log('join while busy — stopping previous session first')
+        stopRequested = true
+        try {
+          await session?.leave()
+        } catch {
+          // ignore
+        }
+        try {
+          await session?.close()
+        } catch {
+          // ignore
+        }
+        session = null
+        recorder = null
+        running = false
+        stopRequested = false
       }
       void runBot(payload).catch((error) => {
         logError('unhandled runBot rejection', error)

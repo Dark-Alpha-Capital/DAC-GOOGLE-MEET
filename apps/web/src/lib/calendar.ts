@@ -1,14 +1,24 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeaders } from '@tanstack/react-start/server'
-import { and, asc, eq, gte, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 
 import { getDb } from '#/db'
-import { meeting, participant } from '#/db/schema'
+import { botRun, meeting, participant } from '#/db/schema'
 import { getAuth } from '#/lib/auth'
 import {
   getWorkflowStatus,
   scheduleMeetingBot,
 } from '#/lib/schedule-bot'
+
+export type BotRunSummary = {
+  id: string
+  status: string
+  joinedAt: Date | null
+  leftAt: Date | null
+  recordingKey: string | null
+  errorMessage: string | null
+  createdAt: Date
+}
 
 export type MeetingWithParticipants = {
   id: string
@@ -23,6 +33,7 @@ export type MeetingWithParticipants = {
   workflowStatus: string | null
   workflowError: string | null
   botWakeAt: string | null
+  latestBotRun: BotRunSummary | null
   participants: Array<{
     email: string
     displayName: string | null
@@ -287,13 +298,14 @@ export const syncMeetingsFromCalendar = createServerFn({
 export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
   async (): Promise<{
     meetings: MeetingWithParticipants[]
+    recent: MeetingWithParticipants[]
     error?: string
   }> => {
     const headers = getRequestHeaders()
     const auth = getAuth()
     const session = await auth.api.getSession({ headers })
     if (!session) {
-      return { meetings: [], error: 'Not signed in' }
+      return { meetings: [], recent: [], error: 'Not signed in' }
     }
 
     const rows = await getDb().query.meeting.findMany({
@@ -305,46 +317,79 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
       orderBy: [asc(meeting.startsAt)],
       with: {
         participants: true,
+        botRuns: {
+          orderBy: [desc(botRun.createdAt)],
+        },
       },
     })
 
-    const meetings = await Promise.all(
-      rows.map(async (row) => {
-        const wf = await getWorkflowStatus(row.workflowInstanceId)
-        const wakeMs = Math.max(
-          Date.now(),
-          row.startsAt.getTime() - 5 * 60 * 1000,
-        )
-        return {
-          id: row.id,
-          googleEventId: row.googleEventId,
-          title: row.title,
-          meetLink: row.meetLink,
-          startsAt: row.startsAt,
-          endsAt: row.endsAt,
-          status: row.status,
-          htmlLink: row.htmlLink,
-          workflowInstanceId: row.workflowInstanceId,
-          workflowStatus: wf?.status ?? null,
-          workflowError:
-            typeof wf?.error === 'string'
-              ? wf.error
-              : wf?.error
-                ? JSON.stringify(wf.error)
-                : null,
-          botWakeAt:
-            row.status === 'scheduled'
-              ? new Date(wakeMs).toISOString()
-              : null,
-          participants: row.participants.map((p) => ({
-            email: p.email,
-            displayName: p.displayName,
-            responseStatus: p.responseStatus,
-          })),
-        }
-      }),
-    )
+    const recentRows = await getDb().query.meeting.findMany({
+      where: and(
+        eq(meeting.userId, session.user.id),
+        inArray(meeting.status, ['completed', 'cancelled']),
+      ),
+      orderBy: [desc(meeting.updatedAt)],
+      limit: 20,
+      with: {
+        participants: true,
+        botRuns: {
+          orderBy: [desc(botRun.createdAt)],
+        },
+      },
+    })
 
-    return { meetings }
+    async function toMeeting(
+      row: (typeof rows)[number],
+    ): Promise<MeetingWithParticipants> {
+      const wf = await getWorkflowStatus(row.workflowInstanceId)
+      const wakeMs = Math.max(
+        Date.now(),
+        row.startsAt.getTime() - 5 * 60 * 1000,
+      )
+      const latest = row.botRuns[0] ?? null
+      return {
+        id: row.id,
+        googleEventId: row.googleEventId,
+        title: row.title,
+        meetLink: row.meetLink,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+        status: row.status,
+        htmlLink: row.htmlLink,
+        workflowInstanceId: row.workflowInstanceId,
+        workflowStatus: wf?.status ?? null,
+        workflowError:
+          wf?.error == null
+            ? null
+            : typeof wf.error === 'string'
+              ? wf.error
+              : JSON.stringify(wf.error as unknown),
+        botWakeAt:
+          row.status === 'scheduled'
+            ? new Date(wakeMs).toISOString()
+            : null,
+        latestBotRun: latest
+          ? {
+              id: latest.id,
+              status: latest.status,
+              joinedAt: latest.joinedAt,
+              leftAt: latest.leftAt,
+              recordingKey: latest.recordingKey,
+              errorMessage: latest.errorMessage,
+              createdAt: latest.createdAt,
+            }
+          : null,
+        participants: row.participants.map((p) => ({
+          email: p.email,
+          displayName: p.displayName,
+          responseStatus: p.responseStatus,
+        })),
+      }
+    }
+
+    const meetings = await Promise.all(rows.map(toMeeting))
+    const recent = await Promise.all(recentRows.map(toMeeting))
+
+    return { meetings, recent }
   },
 )

@@ -30,5 +30,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # IntelliJ based IDEs
 .idea
 
-# Finder (MacOS) folder config
-.DS_Store
+# Signed-in Chromium profile for Meet bot (do not commit)
+bot-chrome-profile
+chrome-user-data

@@ -28,6 +28,80 @@ export type RecordingDonePayload = {
 const FIVE_MIN_MS = 5 * 60 * 1000
 const ADMISSION_BUFFER_MS = 15 * 60 * 1000
 
+/** Container → host callbacks can't use localhost; rewrite for Docker Desktop. */
+function resolveCallbackBaseUrl(raw: string, usingHostBot: boolean) {
+  const base = raw.replace(/\/$/, '')
+  // Host bot talks to vite on the same machine — keep localhost.
+  if (usingHostBot) return base
+  try {
+    const url = new URL(base)
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      url.hostname = 'host.docker.internal'
+      console.log(
+        `[workflow] rewritten callback ${base} → ${url.toString().replace(/\/$/, '')}`,
+      )
+      return url.toString().replace(/\/$/, '')
+    }
+  } catch {
+    // keep as-is
+  }
+  return base
+}
+
+type JoinBody = {
+  meetingId: string
+  meetLink: string
+  displayName: string
+  botRunId: string
+  endsAtMs: number
+  workflowInstanceId: string
+  callbackBaseUrl: string
+  callbackSecret: string
+}
+
+async function postBotJoin(
+  env: Env & { MEET_BOT_URL?: string },
+  body: JoinBody,
+  meetingId: string,
+): Promise<Response> {
+  const hostUrl = (env.MEET_BOT_URL || '').replace(/\/$/, '')
+  if (hostUrl) {
+    console.log(`[workflow] using host bot ${hostUrl}/join (guest Chrome on machine)`)
+    return fetch(`${hostUrl}/join`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  const container = getContainer(
+    env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
+    meetingId,
+  )
+  console.log(`[workflow] starting container for meeting=${meetingId}`)
+  await container.startAndWaitForPorts()
+  return container.fetch(
+    new Request('http://container/join', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+async function postBotStop(env: Env & { MEET_BOT_URL?: string }, meetingId: string) {
+  const hostUrl = (env.MEET_BOT_URL || '').replace(/\/$/, '')
+  if (hostUrl) {
+    await fetch(`${hostUrl}/stop`, { method: 'POST' })
+    return
+  }
+  const container = getContainer(
+    env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
+    meetingId,
+  )
+  await container.fetch(new Request('http://container/stop', { method: 'POST' }))
+}
+
 function db(env: Env) {
   return drizzle(env.DB, { schema })
 }
@@ -81,42 +155,45 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
         .set({ status: 'joining' })
         .where(eq(botRun.id, prepared.botRunId))
 
-      const container = getContainer(
-        this.env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
-        meetingId,
+      const usingHostBot = Boolean(
+        (this.env as Env & { MEET_BOT_URL?: string }).MEET_BOT_URL,
       )
-      console.log(`[workflow] starting container for meeting=${meetingId}`)
-      await container.startAndWaitForPorts()
-      console.log(`[workflow] container ready, POST /join meeting=${meetingId}`)
+      const callbackBaseUrl = resolveCallbackBaseUrl(
+        this.env.BETTER_AUTH_URL,
+        usingHostBot,
+      )
+      const joinBody: JoinBody = {
+        meetingId,
+        meetLink,
+        displayName,
+        botRunId: prepared.botRunId,
+        endsAtMs,
+        workflowInstanceId: instanceId,
+        callbackBaseUrl,
+        callbackSecret: this.env.BOT_INTERNAL_SECRET,
+      }
 
-      const callbackBaseUrl = this.env.BETTER_AUTH_URL.replace(/\/$/, '')
-      const response = await container.fetch(
-        new Request('http://container/join', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            meetingId,
-            meetLink,
-            displayName,
-            botRunId: prepared.botRunId,
-            endsAtMs,
-            workflowInstanceId: instanceId,
-            callbackBaseUrl,
-            callbackSecret: this.env.BOT_INTERNAL_SECRET,
-          }),
-        }),
+      console.log(
+        `[workflow] POST /join meeting=${meetingId} callback=${callbackBaseUrl}`,
+      )
+      const response = await postBotJoin(this.env, joinBody, meetingId)
+
+      const responseText = await response.text()
+      console.log(
+        `[workflow] /join response ${response.status}: ${responseText.slice(0, 300)}`,
       )
 
       if (!response.ok) {
-        const text = await response.text()
         await database
           .update(botRun)
           .set({
             status: 'failed',
-            errorMessage: `Launch failed: ${text}`,
+            errorMessage: `Launch failed: ${responseText}`,
           })
           .where(eq(botRun.id, prepared.botRunId))
-        throw new Error(`Bot launch failed (${response.status}): ${text}`)
+        throw new Error(
+          `Bot launch failed (${response.status}): ${responseText}`,
+        )
       }
 
       return { accepted: true }
@@ -169,15 +246,9 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
       }
 
       try {
-        const container = getContainer(
-          this.env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
-          meetingId,
-        )
-        await container.fetch(
-          new Request('http://container/stop', { method: 'POST' }),
-        )
+        await postBotStop(this.env, meetingId)
       } catch (error) {
-        console.error('Failed to stop meet bot container', error)
+        console.error('Failed to stop meet bot', error)
       }
 
       return { finalized: true }

@@ -4,6 +4,7 @@ import { authClient } from '#/lib/auth-client'
 import {
   getStoredMeetings,
   syncMeetingsFromCalendar,
+  type MeetingWithParticipants,
 } from '#/lib/calendar'
 import { getSession } from '#/lib/session'
 
@@ -20,6 +21,7 @@ export const Route = createFileRoute('/')({
     const stored = await getStoredMeetings()
     return {
       meetings: stored.meetings,
+      recent: stored.recent,
       error: sync.error ?? stored.error,
       synced: sync.synced,
       removed: sync.removed ?? 0,
@@ -28,7 +30,8 @@ export const Route = createFileRoute('/')({
   component: HomePage,
 })
 
-function formatWhen(value: Date | string) {
+function formatWhen(value: Date | string | null | undefined) {
+  if (!value) return '—'
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString(undefined, {
@@ -40,9 +43,92 @@ function formatWhen(value: Date | string) {
   })
 }
 
+function botStatusLabel(run: MeetingWithParticipants['latestBotRun']) {
+  if (!run) return 'bot: not started'
+  switch (run.status) {
+    case 'pending':
+      return 'bot: pending'
+    case 'joining':
+      return 'bot: joining…'
+    case 'waiting_admission':
+      return 'bot: waiting to be admitted'
+    case 'joined':
+      return 'bot: in call / recording'
+    case 'left':
+      return run.recordingKey
+        ? 'bot: completed · recording saved'
+        : 'bot: completed · no recording'
+    case 'failed':
+      return `bot: failed${run.errorMessage ? ` · ${run.errorMessage}` : ''}`
+    default:
+      return `bot: ${run.status}`
+  }
+}
+
+function MeetingRow({ item }: { item: MeetingWithParticipants }) {
+  const run = item.latestBotRun
+  return (
+    <li className="py-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+        <span className="font-medium text-[var(--sea-ink)]">{item.title}</span>
+        <span className="text-sm text-[var(--sea-ink-soft)]">
+          {formatWhen(item.startsAt)}
+        </span>
+      </div>
+
+      {item.meetLink ? (
+        <a
+          href={item.meetLink}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 inline-block text-sm text-[var(--lagoon-deep)]"
+        >
+          {item.meetLink}
+        </a>
+      ) : null}
+
+      <p className="mt-2 text-sm font-medium text-[var(--sea-ink)]">
+        {botStatusLabel(run)}
+      </p>
+      {run ? (
+        <p className="mt-1 font-mono text-xs text-[var(--sea-ink-soft)]">
+          meeting={item.status}
+          {run.joinedAt ? ` · joined ${formatWhen(run.joinedAt)}` : ''}
+          {run.leftAt ? ` · left ${formatWhen(run.leftAt)}` : ''}
+          {run.recordingKey ? ` · recording ${run.recordingKey}` : ''}
+        </p>
+      ) : null}
+
+      <p className="mt-1 font-mono text-xs text-[var(--sea-ink-soft)]">
+        workflow: {item.workflowStatus ?? 'none'}
+        {item.workflowInstanceId
+          ? ` · id=${item.workflowInstanceId.slice(0, 8)}…`
+          : ''}
+        {item.botWakeAt ? ` · bot wakes ${formatWhen(item.botWakeAt)}` : ''}
+        {item.workflowError ? ` · error=${item.workflowError}` : ''}
+      </p>
+
+      {item.participants.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-sm text-[var(--sea-ink-soft)]">
+          {item.participants.map((p) => (
+            <li key={`${item.id}-${p.email}`}>
+              {p.displayName ?? p.email}
+              {p.responseStatus ? ` · ${p.responseStatus}` : ''}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+          No invitees listed
+        </p>
+      )}
+    </li>
+  )
+}
+
 function HomePage() {
   const { session } = Route.useRouteContext()
-  const { meetings, error, synced, removed } = Route.useLoaderData()
+  const { meetings, recent, error, synced, removed } = Route.useLoaderData()
 
   return (
     <main className="page-wrap px-4 py-12">
@@ -84,8 +170,8 @@ function HomePage() {
           Upcoming Google Meet meetings
         </h2>
         <p className="mt-1 text-xs text-[var(--sea-ink-soft)]">
-          Participants below are invitees (Calendar RSVP), not who actually
-          joined the call.
+          Bot status updates as the notetaker joins, records, and uploads to
+          Nextcloud.
         </p>
 
         {error ? (
@@ -97,53 +183,27 @@ function HomePage() {
         ) : (
           <ul className="mt-4 divide-y divide-[var(--line)]">
             {meetings.map((item) => (
-              <li key={item.id} className="py-4">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                  <span className="font-medium text-[var(--sea-ink)]">
-                    {item.title}
-                  </span>
-                  <span className="text-sm text-[var(--sea-ink-soft)]">
-                    {formatWhen(item.startsAt)}
-                  </span>
-                </div>
+              <MeetingRow key={item.id} item={item} />
+            ))}
+          </ul>
+        )}
+      </section>
 
-                {item.meetLink ? (
-                  <a
-                    href={item.meetLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 inline-block text-sm text-[var(--lagoon-deep)]"
-                  >
-                    {item.meetLink}
-                  </a>
-                ) : null}
-
-                <p className="mt-2 font-mono text-xs text-[var(--sea-ink-soft)]">
-                  workflow: {item.workflowStatus ?? 'none'}
-                  {item.workflowInstanceId
-                    ? ` · id=${item.workflowInstanceId.slice(0, 8)}…`
-                    : ''}
-                  {item.botWakeAt
-                    ? ` · bot wakes ${formatWhen(item.botWakeAt)}`
-                    : ''}
-                  {item.workflowError ? ` · error=${item.workflowError}` : ''}
-                </p>
-
-                {item.participants.length > 0 ? (
-                  <ul className="mt-2 space-y-1 text-sm text-[var(--sea-ink-soft)]">
-                    {item.participants.map((p) => (
-                      <li key={`${item.id}-${p.email}`}>
-                        {p.displayName ?? p.email}
-                        {p.responseStatus ? ` · ${p.responseStatus}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-                    No invitees listed
-                  </p>
-                )}
-              </li>
+      <section className="island-shell mt-8 rounded-2xl px-5 py-6 sm:px-8">
+        <h2 className="text-lg font-semibold text-[var(--sea-ink)]">
+          Recent bot history
+        </h2>
+        <p className="mt-1 text-xs text-[var(--sea-ink-soft)]">
+          Completed and cancelled meetings with join / recording outcome.
+        </p>
+        {recent.length === 0 ? (
+          <p className="mt-4 text-sm text-[var(--sea-ink-soft)]">
+            No completed bot runs yet.
+          </p>
+        ) : (
+          <ul className="mt-4 divide-y divide-[var(--line)]">
+            {recent.map((item) => (
+              <MeetingRow key={item.id} item={item} />
             ))}
           </ul>
         )}

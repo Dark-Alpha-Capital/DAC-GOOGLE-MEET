@@ -5,8 +5,13 @@
   "private": true,
   "scripts": {
     "dev": "bun run --hot index.ts",
+    "dev:guest": "BOT_HEADED=1 bun run --hot index.ts",
+    "chrome:roghan": "bash scripts/start-roghan-chrome.sh",
+    "login:roghan": "bash scripts/login-bot-account.sh",
+    "dev:roghan": "BOT_CDP_URL=http://127.0.0.1:9222 bun run --hot index.ts",
     "build": "bun build ./index.ts --outdir ./dist --target bun",
     "start": "bun run dist/index.js",
+    "sync:chrome-profile": "bash scripts/sync-chrome-profile.sh",
     "docker:build": "docker build -t meet-bot .",
     "docker:run": "docker run --rm -p 8080:8080 meet-bot"
   },

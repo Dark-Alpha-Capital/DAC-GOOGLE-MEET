@@ -9,6 +9,9 @@ export class MeetBotContainer extends Container {
   sleepAfter = '3h'
   enableInternet = true
   pingEndpoint = '/health'
+  envVars = {
+    BOT_HEADED: '1',
+  }
 
   override async onActivityExpired(): Promise<void> {
     // Do not stop — Meet sessions outlive idle HTTP gaps. Finalize step stops explicitly.

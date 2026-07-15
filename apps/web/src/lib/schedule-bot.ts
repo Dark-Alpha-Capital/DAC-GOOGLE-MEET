@@ -1,8 +1,12 @@
+import { desc, eq } from 'drizzle-orm'
 import { env } from 'cloudflare:workers'
 
+import { getDb } from '#/db'
+import { botRun } from '#/db/schema'
 import type { MeetingBotParams } from '#/workflows/meeting-bot'
 
 const TERMINAL = new Set(['complete', 'terminated', 'errored'])
+const STUCK_JOIN_MS = 2 * 60 * 1000
 
 /** Stable Workflow instance id per meeting (first schedule). */
 export function workflowInstanceIdForMeeting(meetingId: string) {
@@ -30,10 +34,38 @@ async function terminateIfRunning(instanceId: string) {
   }
 }
 
+/** True if an in-progress meeting's bot never got into the call / failed. */
+async function isBotStuckOrFailed(meetingId: string, startsAt: Date) {
+  const latest = await getDb().query.botRun.findFirst({
+    where: eq(botRun.meetingId, meetingId),
+    orderBy: [desc(botRun.createdAt)],
+  })
+
+  if (!latest) {
+    // Meeting already started (or past T-5) but no bot run → launch never stuck a row, or old data
+    return Date.now() >= startsAt.getTime() - 5 * 60 * 1000
+  }
+
+  if (latest.status === 'failed') return true
+  if (latest.status === 'joined' || latest.status === 'left') return false
+
+  // pending / joining / waiting_admission too long after wake time
+  const wakeAt = startsAt.getTime() - 5 * 60 * 1000
+  if (Date.now() < wakeAt + STUCK_JOIN_MS) return false
+
+  return (
+    latest.status === 'pending' ||
+    latest.status === 'joining' ||
+    latest.status === 'waiting_admission'
+  )
+}
+
 /**
  * Create or replace the MeetingBotWorkflow for a scheduled Meet.
  * Cancelled / completed meetings terminate any running instance.
- * Errored / finished instances get a new id (CF IDs are one-shot).
+ * Errored / stuck / finished instances get a new id (CF IDs are one-shot).
+ *
+ * In-progress meetings: wakeAt = now → join immediately (no wait for wall clock).
  */
 export async function scheduleMeetingBot(input: {
   meetingId: string
@@ -49,6 +81,8 @@ export async function scheduleMeetingBot(input: {
   const wakeAt = new Date(
     Math.max(Date.now(), input.startsAt.getTime() - 5 * 60 * 1000),
   )
+  const inProgress =
+    Date.now() >= input.startsAt.getTime() && Date.now() < input.endsAt.getTime()
 
   if (input.status !== 'scheduled' || !input.meetLink) {
     console.log(
@@ -74,11 +108,15 @@ export async function scheduleMeetingBot(input: {
     !previousStatus ||
     TERMINAL.has(previousStatus.status)
 
-  const needsCreate = previousDead || scheduleChanged
+  const stuck =
+    !previousDead &&
+    (await isBotStuckOrFailed(input.meetingId, input.startsAt))
+
+  const needsCreate = previousDead || scheduleChanged || stuck
 
   if (!needsCreate && previousId) {
     console.log(
-      `[workflow] already scheduled meeting=${input.meetingId} id=${previousId} status=${previousStatus?.status} wakeAt=${wakeAt.toISOString()}`,
+      `[workflow] already scheduled meeting=${input.meetingId} id=${previousId} status=${previousStatus?.status} inProgress=${inProgress} wakeAt=${wakeAt.toISOString()}`,
     )
     return previousId
   }
@@ -87,10 +125,14 @@ export async function scheduleMeetingBot(input: {
     await terminateIfRunning(previousId)
   }
 
+  const reason = scheduleChanged
+    ? 'schedule-changed'
+    : stuck
+      ? 'stuck-or-failed-rejoin'
+      : (previousStatus?.status ?? 'missing')
+
   // CF workflow instance ids are unique forever — use a fresh id after errors/resyncs.
-  const instanceId = previousDead || scheduleChanged
-    ? `${baseId}-${Date.now()}`
-    : baseId
+  const instanceId = `${baseId}-${Date.now()}`
 
   const params: MeetingBotParams = {
     meetingId: input.meetingId,
@@ -106,7 +148,7 @@ export async function scheduleMeetingBot(input: {
   })
 
   console.log(
-    `[workflow] created meeting=${input.meetingId} id=${instanceId} reason=${previousDead ? previousStatus?.status ?? 'missing' : 'schedule-changed'} startsAt=${input.startsAt.toISOString()} wakeAt=${wakeAt.toISOString()}`,
+    `[workflow] created meeting=${input.meetingId} id=${instanceId} reason=${reason} inProgress=${inProgress} startsAt=${input.startsAt.toISOString()} wakeAt=${wakeAt.toISOString()}`,
   )
 
   return instanceId

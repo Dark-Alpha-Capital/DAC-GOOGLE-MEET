@@ -49,39 +49,62 @@ export function createNextcloudStorage(
     return `${baseUrl}/remote.php/dav/files/${userSegment}/${encodedPath}`
   }
 
-  async function ensureCollection(dirKey: string) {
-    const normalized = normalizeKey(dirKey)
-    if (!normalized) return
+  async function collectionExists(relativePath: string): Promise<boolean> {
+    const response = await fetch(davUrl(relativePath), {
+      method: 'PROPFIND',
+      headers: {
+        Authorization: auth,
+        Depth: '0',
+      },
+    })
+    return response.status === 207 || response.status === 200
+  }
 
-    const segments = normalized.split('/')
+  async function mkcol(relativePath: string) {
+    if (await collectionExists(relativePath)) return
+
+    const response = await fetch(davUrl(relativePath), {
+      method: 'MKCOL',
+      headers: { Authorization: auth },
+    })
+
+    if (
+      response.status === 201 ||
+      response.status === 405 ||
+      response.status === 301 ||
+      response.status === 200
+    ) {
+      return
+    }
+
+    // Conflict / forbidden: another writer may have created it
+    if (
+      (response.status === 409 || response.status === 403) &&
+      (await collectionExists(relativePath))
+    ) {
+      return
+    }
+
+    const text = await response.text()
+    throw new Error(
+      `Nextcloud MKCOL failed (${response.status}) for ${joinPath(rootPath, relativePath)}: ${text}`,
+    )
+  }
+
+  /** Ensure root + each nested folder under it exists. */
+  async function ensureParentPath(objectKey: string) {
+    await mkcol('') // rootPath itself (dac-googlemeet)
+
+    const parent = objectKey.includes('/')
+      ? objectKey.slice(0, objectKey.lastIndexOf('/'))
+      : ''
+    if (!parent) return
+
+    const segments = parent.split('/')
     let built = ''
     for (const segment of segments) {
       built = joinPath(built, segment)
-      const response = await fetch(davUrl(built), {
-        method: 'MKCOL',
-        headers: { Authorization: auth },
-      })
-      // 201 created, 405 already exists (method not allowed on existing), 409 parent missing (shouldn't happen)
-      if (
-        response.status === 201 ||
-        response.status === 405 ||
-        response.status === 301 ||
-        response.status === 200
-      ) {
-        continue
-      }
-      if (response.status === 409) {
-        // Parent missing — continue building; rare with sequential MKCOL
-        continue
-      }
-      // Some Nextcloud versions return 403/404 for existing folders depending on config
-      if (response.status === 403 || response.status === 404) {
-        continue
-      }
-      const text = await response.text()
-      throw new Error(
-        `Nextcloud MKCOL failed (${response.status}) for ${built}: ${text}`,
-      )
+      await mkcol(built)
     }
   }
 
@@ -92,12 +115,7 @@ export function createNextcloudStorage(
       options?: PutObjectOptions,
     ): Promise<PutObjectResult> {
       const objectKey = normalizeKey(key)
-      const parent = objectKey.includes('/')
-        ? objectKey.slice(0, objectKey.lastIndexOf('/'))
-        : ''
-      if (parent) {
-        await ensureCollection(parent)
-      }
+      await ensureParentPath(objectKey)
 
       const url = davUrl(objectKey)
       const headers: Record<string, string> = {
@@ -108,10 +126,15 @@ export function createNextcloudStorage(
         headers['Content-Type'] = options.contentType
       }
 
+      let uploadBody: BodyInit = body as BodyInit
+      if (typeof Blob !== 'undefined' && body instanceof Blob) {
+        uploadBody = await body.arrayBuffer()
+      }
+
       const response = await fetch(url, {
         method: 'PUT',
         headers,
-        body: body as BodyInit,
+        body: uploadBody,
       })
 
       if (!response.ok && response.status !== 201 && response.status !== 204) {
@@ -125,14 +148,7 @@ export function createNextcloudStorage(
     },
 
     async exists(key: string): Promise<boolean> {
-      const response = await fetch(davUrl(normalizeKey(key)), {
-        method: 'PROPFIND',
-        headers: {
-          Authorization: auth,
-          Depth: '0',
-        },
-      })
-      return response.status === 207 || response.status === 200
+      return collectionExists(normalizeKey(key))
     },
 
     async delete(key: string): Promise<void> {

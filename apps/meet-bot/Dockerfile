@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
   PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
   PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
   BOT_HEADED=1 \
+  BOT_USER_DATA_DIR=/data/chrome \
   DISPLAY=:99 \
   HOME=/tmp \
   PORT=8080
@@ -27,6 +28,9 @@ RUN bun install --production
 COPY index.ts ./
 COPY src ./src
 RUN bun run build
+# Populated by: bun run sync:chrome-profile (gitignored contents; keep dir present)
+COPY chrome-user-data /data/chrome
+RUN chmod -R a+rwX /data/chrome
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
