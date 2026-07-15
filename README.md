@@ -1,159 +1,129 @@
-# Turborepo starter
+# dac-googlemeet
 
-This Turborepo starter is maintained by the Turborepo core team.
+Automated Google Meet recording. The system signs into your Google Calendar, finds every event with a Meet link, and dispatches a headless Chromium bot that joins as a guest, records audio, and uploads the result to your own storage. No manual intervention — schedule a Meet, and the recording lands in your Nextcloud.
 
-## Using this example
+**Goal**: Replace manual meeting recording with a zero-touch pipeline. You schedule a Google Meet, and a bot joins at T-minus-5 minutes, records the audio, and uploads the `.webm` to Nextcloud via WebDAV.
 
-Run the following command:
+---
 
-```sh
-npx create-turbo@latest
+## Architecture at a glance
+
+```
+User → Browser (TanStack Start SSR)
+        │
+        ├─ Google OAuth (Better Auth) → D1 (SQLite)
+        ├─ Google Calendar API v3 → sync events with Meet links
+        └─ Cloudflare Workflow per meeting:
+             1. prepare     — create bot_run row (pending)
+             2. sleepUntil  — wake at meeting.start - 5 min
+             3. launch      — start Docker container (Chromium + ffmpeg)
+             4. waitForEvent— wait for recording-done
+             5. finalize    — mark complete, stop container
+
+Container: Bun HTTP server on :8080
+  └─ POST /join  → Puppeteer joins Meet as guest "DAC Notetaker"
+       ├─ Dismisses dialogs, fills name, clicks "Ask to join"
+       ├─ Monitors for admission, then captures audio via PulseAudio + ffmpeg
+       └─ POST /api/bot/complete → uploads .webm to Nextcloud
+
+Storage: Nextcloud WebDAV (fetch-based, Workers-compatible)
+  recordings/{meetingId}/{botRunId}.webm
 ```
 
-## What's inside?
+### Project structure
 
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```
+apps/
+  web/          Dashboard (TanStack Start + Cloudflare Workers)
+  meet-bot/     Bot container (Bun + Puppeteer + Chromium + ffmpeg)
+  server/       Unused stub
+packages/
+  storage/      Nextcloud WebDAV client (@repo/storage, fetch-based)
+  eslint-config/  Shared ESLint config
+  typescript-config/  Shared tsconfig bases
+  ui/           Stub component library
 ```
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo build
-bun dlx turbo build
-bun exec turbo build
+## Quick start
+
+```bash
+# Prerequisites: Bun >= 1.2.15, Google Cloud Console project with OAuth + Calendar API
+
+# 1. Clone & install
+git clone <repo-url> && cd dac-googlemeet
+bun install
+
+# 2. Set secrets (see docs/setup.md for details)
+cd apps/web
+bunx wrangler secret put BETTER_AUTH_SECRET
+bunx wrangler secret put GOOGLE_CLIENT_ID
+bunx wrangler secret put GOOGLE_CLIENT_SECRET
+bunx wrangler secret put BOT_INTERNAL_SECRET
+bunx wrangler secret put NEXTCLOUD_URL
+bunx wrangler secret put NEXTCLOUD_USER
+bunx wrangler secret put NEXTCLOUD_PASSWORD
+
+# 3. Run DB migrations locally
+bun run db:migrate:local
+
+# 4. Start the dev server
+bun run dev
+# (with containers enabled for local testing)
+ENABLE_CONTAINERS=1 bun run dev
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Key tech
 
-```sh
-turbo build --filter=docs
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19 + TanStack Start v1 + Tailwind CSS v4 + shadcn/ui |
+| Auth | Better Auth v1.5 (Google OAuth, D1 adapter) |
+| Database | Cloudflare D1 (SQLite via Drizzle ORM) |
+| Orchestration | Cloudflare Workflows + Containers (Durable Objects) |
+| Bot | Puppeteer-core + Chromium + ffmpeg + PulseAudio |
+| Storage | Nextcloud WebDAV (fetch-based, Workers-compatible) |
+| Runtime | Bun (monorepo and bot), Cloudflare Workers (web) |
+| Monorepo | Turborepo with Bun workspace |
+
+---
+
+## Documentation
+
+- **[docs/architecture.md](docs/architecture.md)** — Full system architecture, data flow, and component deep-dive
+- **[docs/setup.md](docs/setup.md)** — Local development setup, environment variables, and prerequisites
+- **[docs/meet-bot.md](docs/meet-bot.md)** — How the bot joins, records, and handles edge cases
+- **[docs/bot-google-account.md](docs/bot-google-account.md)** — Roadmap for a dedicated Google Workspace bot account
+
+---
+
+## Common commands
+
+```bash
+# Monorepo
+bun run dev                     # Dev all apps
+bun run build                   # Build all
+bun run lint                    # Lint all
+bun run check-types             # Type-check all
+bun run format                  # Prettier
+
+# Web app only
+cd apps/web
+bun run dev                     # Dev on :3000
+bun run generate-routes         # Regen TanStack Router tree (required after route changes)
+bun run test                    # Vitest
+bun run db:generate             # Create Drizzle migration from schema changes
+bun run db:migrate:local        # Apply migrations to local D1
+bun run db:migrate:remote       # Apply migrations to remote D1
+bun run deploy                  # Build + wrangler deploy
+
+# Meet-bot only
+cd apps/meet-bot
+bun run dev                     # tsx src/server.ts
+bun run build                   # tsc compile
+bun run docker:build            # docker build
+bun run docker:run              # docker run -p 8080:8080
 ```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)

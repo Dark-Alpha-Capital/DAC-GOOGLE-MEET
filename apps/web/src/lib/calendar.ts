@@ -1,11 +1,14 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeaders } from '@tanstack/react-start/server'
-import { and, asc, eq, gte } from 'drizzle-orm'
+import { and, asc, eq, gte, lte } from 'drizzle-orm'
 
 import { getDb } from '#/db'
 import { meeting, participant } from '#/db/schema'
 import { getAuth } from '#/lib/auth'
-import { scheduleMeetingBot } from '#/lib/schedule-bot'
+import {
+  getWorkflowStatus,
+  scheduleMeetingBot,
+} from '#/lib/schedule-bot'
 
 export type MeetingWithParticipants = {
   id: string
@@ -16,6 +19,10 @@ export type MeetingWithParticipants = {
   endsAt: Date
   status: string
   htmlLink: string | null
+  workflowInstanceId: string | null
+  workflowStatus: string | null
+  workflowError: string | null
+  botWakeAt: string | null
   participants: Array<{
     email: string
     displayName: string | null
@@ -129,21 +136,27 @@ async function fetchUpcomingGoogleEvents(accessToken: string) {
 /** Upsert Meet-linked calendar events + invitees into D1. */
 export const syncMeetingsFromCalendar = createServerFn({
   method: 'POST',
-}).handler(async (): Promise<{ synced: number; error?: string }> => {
+}).handler(async (): Promise<{
+  synced: number
+  removed: number
+  error?: string
+}> => {
   const headers = getRequestHeaders()
   const authResult = await getGoogleAccessToken(headers)
   if ('error' in authResult) {
-    return { synced: 0, error: authResult.error }
+    return { synced: 0, removed: 0, error: authResult.error }
   }
 
   const { session, accessToken } = authResult
   const calendarResult = await fetchUpcomingGoogleEvents(accessToken)
   if ('error' in calendarResult) {
-    return { synced: 0, error: calendarResult.error }
+    return { synced: 0, removed: 0, error: calendarResult.error }
   }
 
   const db = getDb()
   let synced = 0
+  const seenGoogleIds = new Set<string>()
+  const syncWindowEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
 
   for (const event of calendarResult.events) {
     if (!event.id) continue
@@ -154,6 +167,8 @@ export const syncMeetingsFromCalendar = createServerFn({
     const startsAt = parseEventTime(event.start)
     const endsAt = parseEventTime(event.end)
     if (!startsAt || !endsAt) continue
+
+    seenGoogleIds.add(event.id)
 
     const status =
       event.status === 'cancelled'
@@ -232,7 +247,41 @@ export const syncMeetingsFromCalendar = createServerFn({
     synced += 1
   }
 
-  return { synced }
+  // Calendar deletions don't appear in the list API — drop locals that vanished.
+  const staleLocals = await db.query.meeting.findMany({
+    where: and(
+      eq(meeting.userId, session.user.id),
+      eq(meeting.status, 'scheduled'),
+      gte(meeting.endsAt, new Date()),
+      lte(meeting.startsAt, syncWindowEnd),
+    ),
+  })
+
+  let removed = 0
+  for (const local of staleLocals) {
+    if (seenGoogleIds.has(local.googleEventId)) continue
+
+    await scheduleMeetingBot({
+      meetingId: local.id,
+      meetLink: local.meetLink,
+      startsAt: local.startsAt,
+      endsAt: local.endsAt,
+      status: 'cancelled',
+      previousWorkflowInstanceId: local.workflowInstanceId,
+    })
+
+    await db
+      .update(meeting)
+      .set({ status: 'cancelled', workflowInstanceId: null })
+      .where(eq(meeting.id, local.id))
+
+    console.log(
+      `[calendar] removed deleted meeting=${local.id} title=${local.title}`,
+    )
+    removed += 1
+  }
+
+  return { synced, removed }
 })
 
 export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
@@ -250,6 +299,7 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
     const rows = await getDb().query.meeting.findMany({
       where: and(
         eq(meeting.userId, session.user.id),
+        eq(meeting.status, 'scheduled'),
         gte(meeting.endsAt, new Date()),
       ),
       orderBy: [asc(meeting.startsAt)],
@@ -258,22 +308,43 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
       },
     })
 
-    return {
-      meetings: rows.map((row) => ({
-        id: row.id,
-        googleEventId: row.googleEventId,
-        title: row.title,
-        meetLink: row.meetLink,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
-        status: row.status,
-        htmlLink: row.htmlLink,
-        participants: row.participants.map((p) => ({
-          email: p.email,
-          displayName: p.displayName,
-          responseStatus: p.responseStatus,
-        })),
-      })),
-    }
+    const meetings = await Promise.all(
+      rows.map(async (row) => {
+        const wf = await getWorkflowStatus(row.workflowInstanceId)
+        const wakeMs = Math.max(
+          Date.now(),
+          row.startsAt.getTime() - 5 * 60 * 1000,
+        )
+        return {
+          id: row.id,
+          googleEventId: row.googleEventId,
+          title: row.title,
+          meetLink: row.meetLink,
+          startsAt: row.startsAt,
+          endsAt: row.endsAt,
+          status: row.status,
+          htmlLink: row.htmlLink,
+          workflowInstanceId: row.workflowInstanceId,
+          workflowStatus: wf?.status ?? null,
+          workflowError:
+            typeof wf?.error === 'string'
+              ? wf.error
+              : wf?.error
+                ? JSON.stringify(wf.error)
+                : null,
+          botWakeAt:
+            row.status === 'scheduled'
+              ? new Date(wakeMs).toISOString()
+              : null,
+          participants: row.participants.map((p) => ({
+            email: p.email,
+            displayName: p.displayName,
+            responseStatus: p.responseStatus,
+          })),
+        }
+      }),
+    )
+
+    return { meetings }
   },
 )

@@ -1,29 +1,23 @@
-import { spawn, type ChildProcess } from 'node:child_process'
-import { createReadStream } from 'node:fs'
+import { spawn, type Subprocess } from 'bun'
 import { unlink } from 'node:fs/promises'
 import path from 'node:path'
 
-import type { JoinPayload } from './types.js'
+import type { JoinPayload } from './types.ts'
 
 export class AudioRecorder {
-  private process: ChildProcess | null = null
+  private process: Subprocess | null = null
   private readonly outputPath: string
 
   constructor(botRunId: string) {
     this.outputPath = path.join('/tmp', `recording-${botRunId}.webm`)
   }
 
-  get path() {
-    return this.outputPath
-  }
-
   start() {
     if (this.process) return
 
-    // Capture the PulseAudio monitor of the virtual Meet sink.
-    this.process = spawn(
-      'ffmpeg',
-      [
+    this.process = spawn({
+      cmd: [
+        'ffmpeg',
         '-y',
         '-f',
         'pulse',
@@ -35,14 +29,8 @@ export class AudioRecorder {
         '64k',
         this.outputPath,
       ],
-      { stdio: ['ignore', 'ignore', 'pipe'] },
-    )
-
-    this.process.stderr?.on('data', (chunk) => {
-      const text = String(chunk)
-      if (text.toLowerCase().includes('error')) {
-        console.error('[ffmpeg]', text.trim())
-      }
+      stdout: 'ignore',
+      stderr: 'pipe',
     })
   }
 
@@ -51,24 +39,22 @@ export class AudioRecorder {
 
     const proc = this.process
     this.process = null
+    proc.kill('SIGINT')
 
-    await new Promise<void>((resolve) => {
-      proc.once('close', () => resolve())
-      proc.kill('SIGINT')
-      setTimeout(() => {
-        try {
-          proc.kill('SIGKILL')
-        } catch {
-          // ignore
-        }
-        resolve()
-      }, 5000)
-    })
+    const deadline = Date.now() + 5000
+    while (proc.exitCode === null && Date.now() < deadline) {
+      await Bun.sleep(100)
+    }
+    if (proc.exitCode === null) proc.kill('SIGKILL')
 
     return this.outputPath
   }
 
-  async upload(payload: JoinPayload, status: 'left' | 'failed', errorMessage?: string) {
+  async upload(
+    payload: JoinPayload,
+    status: 'left' | 'failed',
+    errorMessage?: string,
+  ) {
     const form = new FormData()
     form.set('botRunId', payload.botRunId)
     form.set('meetingId', payload.meetingId)
@@ -77,13 +63,10 @@ export class AudioRecorder {
     if (errorMessage) form.set('errorMessage', errorMessage)
 
     try {
-      const stream = createReadStream(this.outputPath)
-      const chunks: Buffer[] = []
-      for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      const file = Bun.file(this.outputPath)
+      if (await file.exists()) {
+        form.set('recording', file, `${payload.botRunId}.webm`)
       }
-      const blob = new Blob([Buffer.concat(chunks)], { type: 'audio/webm' })
-      form.set('recording', blob, `${payload.botRunId}.webm`)
     } catch {
       // Recording file may be missing on early failure.
     }

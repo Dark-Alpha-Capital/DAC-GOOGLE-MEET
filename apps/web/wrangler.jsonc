@@ -1,66 +1,65 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "dac-google-meet",
-	"compatibility_date": "2025-09-02",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	"main": "src/server.ts",
-	"vars": {
-		"BETTER_AUTH_URL": "https://meeting.darkalphacapital.com",
-		"BOT_DISPLAY_NAME": "DAC Notetaker"
-	},
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "dac-googlemeet",
-			"database_id": "5b0f11e9-efc8-446c-9a4e-9798448d5ae3",
-			"migrations_dir": "drizzle"
-		}
-	],
-	"workflows": [
-		{
-			"name": "meeting-bot-workflow",
-			"binding": "MEETING_BOT_WORKFLOW",
-			"class_name": "MeetingBotWorkflow"
-		}
-	],
-	"containers": [
-		{
-			"class_name": "MeetBotContainer",
-			"image": "../meet-bot/Dockerfile",
-			"instance_type": "standard-2",
-			"max_instances": 20
-		}
-	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "MEET_BOT_CONTAINER",
-				"class_name": "MeetBotContainer"
-			}
-		]
-	},
-	"migrations": [
-		{
-			"tag": "v1-meet-bot-container",
-			"new_sqlite_classes": ["MeetBotContainer"]
-		}
-	],
-	"routes": [
-		{
-			"pattern": "meeting.darkalphacapital.com",
-			"zone_name": "darkalphacapital.com",
-			"custom_domain": true,
-			"enabled": true,
-			"previews_enabled": false
-		}
-	],
-	"observability": {
-		"enabled": true
-	},
-	// Skip Docker image builds during vite/wrangler local dev (use `bun run dev:containers` to enable).
-	"dev": {
-		"enable_containers": false
-	}
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dac-google-meet",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/server.ts",
+  "vars": {
+		"BETTER_AUTH_URL": "https://dac-google-meet.rahulguptax14.workers.dev",
+    "BOT_DISPLAY_NAME": "DAC Notetaker",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dac-googlemeet",
+      "database_id": "9ec08ba8-5b24-49cb-ba99-982914c3feac",
+      "migrations_dir": "drizzle",
+    },
+  ],
+  "workflows": [
+    {
+      "name": "meeting-bot-workflow",
+      "binding": "MEETING_BOT_WORKFLOW",
+      "class_name": "MeetingBotWorkflow",
+    },
+  ],
+  "containers": [
+    {
+      "class_name": "MeetBotContainer",
+      "image": "../meet-bot/Dockerfile",
+      "instance_type": "standard-2",
+      "max_instances": 20,
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MEET_BOT_CONTAINER",
+        "class_name": "MeetBotContainer",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1-meet-bot-container",
+      "new_sqlite_classes": ["MeetBotContainer"],
+    },
+  ],
+  // Custom domain requires darkalphacapital.com on this Cloudflare account.
+  // Re-add once the zone is present:
+  // "routes": [{
+  //   "pattern": "meeting.darkalphacapital.com",
+  //   "zone_name": "darkalphacapital.com",
+  //   "custom_domain": true,
+  //   "enabled": true,
+  //   "previews_enabled": false
+  // }],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+  },
+  // Skip Docker image builds during vite/wrangler local dev (use `bun run dev:containers` to enable).
+  "dev": {
+    "enable_containers": false,
+  },
 }

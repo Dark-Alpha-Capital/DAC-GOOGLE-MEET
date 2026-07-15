@@ -7,14 +7,14 @@
 	],
 	"main": "src/server.ts",
 	"vars": {
-		"BETTER_AUTH_URL": "https://meeting.darkalphacapital.com",
+		"BETTER_AUTH_URL": "https://dac-google-meet.rahulguptax14.workers.dev",
 		"BOT_DISPLAY_NAME": "DAC Notetaker"
 	},
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_name": "dac-googlemeet",
-			"database_id": "5b0f11e9-efc8-446c-9a4e-9798448d5ae3",
+			"database_id": "9ec08ba8-5b24-49cb-ba99-982914c3feac",
 			"migrations_dir": "drizzle"
 		}
 	],
@@ -47,15 +47,8 @@
 			"new_sqlite_classes": ["MeetBotContainer"]
 		}
 	],
-	"routes": [
-		{
-			"pattern": "meeting.darkalphacapital.com",
-			"zone_name": "darkalphacapital.com",
-			"custom_domain": true,
-			"enabled": true,
-			"previews_enabled": false
-		}
-	],
+	// Custom domain requires darkalphacapital.com on this Cloudflare account.
+	"workers_dev": true,
 	"observability": {
 		"enabled": true
 	},

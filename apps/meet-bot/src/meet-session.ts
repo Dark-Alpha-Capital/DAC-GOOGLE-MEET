@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import puppeteer, { type Browser, type Page } from 'puppeteer-core'
 
-import type { JoinPayload } from './types.js'
+import type { JoinPayload } from './types.ts'
 
 function resolveChromePath() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -20,15 +20,16 @@ function resolveChromePath() {
 
 const CHROME_PATH = resolveChromePath()
 
-/** Headed on macOS/local by default — Meet often breaks in headless. */
+/** Prefer headed (Xvfb in Docker) — Meet often blocks pure headless. */
 function shouldRunHeaded() {
   if (process.env.BOT_HEADED === '1') return true
   if (process.env.BOT_HEADED === '0') return false
+  if (process.env.DISPLAY) return true
   return process.platform === 'darwin' && !fs.existsSync('/.dockerenv')
 }
 
-async function sleep(ms: number) {
-  await new Promise((r) => setTimeout(r, ms))
+function log(...args: unknown[]) {
+  console.log(`[meet ${new Date().toISOString()}]`, ...args)
 }
 
 async function clickByText(page: Page, texts: string[]) {
@@ -60,10 +61,10 @@ async function waitAndClick(
   for (let i = 0; i < attempts; i++) {
     const clicked = await clickByText(page, texts)
     if (clicked) {
-      console.log(`[meet] clicked: "${clicked}"`)
+      log(`clicked: "${clicked}"`)
       return true
     }
-    await sleep(delayMs)
+    await Bun.sleep(delayMs)
   }
   return false
 }
@@ -111,7 +112,6 @@ async function fillGuestName(page: Page, displayName: string) {
     }, displayName)
 
     if (filled) {
-      // Also type via CDP for frameworks that ignore .value
       const handle =
         (await page.$('input[aria-label*="name" i]')) ||
         (await page.$('input[placeholder*="name" i]')) ||
@@ -120,10 +120,10 @@ async function fillGuestName(page: Page, displayName: string) {
         await handle.click({ clickCount: 3 })
         await handle.type(displayName, { delay: 15 })
       }
-      console.log(`[meet] filled guest name: ${displayName}`)
+      log(`filled guest name: ${displayName}`)
       return true
     }
-    await sleep(800)
+    await Bun.sleep(800)
   }
   return false
 }
@@ -168,8 +168,9 @@ async function dumpDebug(page: Page, label: string) {
 }
 
 async function isWaitingForHost(page: Page) {
-  const body = ((await page.evaluate(() => document.body?.innerText || '')) || '')
-    .toLowerCase()
+  const body = (
+    (await page.evaluate(() => document.body?.innerText || '')) || ''
+  ).toLowerCase()
   return (
     body.includes('asking to join') ||
     body.includes('asking to be let in') ||
@@ -180,8 +181,9 @@ async function isWaitingForHost(page: Page) {
 }
 
 async function isInMeeting(page: Page) {
-  const body = ((await page.evaluate(() => document.body?.innerText || '')) || '')
-    .toLowerCase()
+  const body = (
+    (await page.evaluate(() => document.body?.innerText || '')) || ''
+  ).toLowerCase()
   const hasLeave =
     body.includes('leave call') ||
     (await page.$('[aria-label*="Leave call" i]')) !== null
@@ -195,44 +197,64 @@ export class MeetGuestSession {
 
   async start(payload: JoinPayload) {
     const headed = shouldRunHeaded()
-    console.log(
-      `[meet] launching chrome headed=${headed} path=${CHROME_PATH}`,
+    log(
+      `launching chrome headed=${headed} path=${CHROME_PATH} display=${process.env.DISPLAY ?? '(none)'}`,
     )
 
-    this.browser = await puppeteer.launch({
-      executablePath: CHROME_PATH,
-      headless: headed ? false : true,
-      // Hide the "Chrome is being controlled by automated test software" banner.
-      ignoreDefaultArgs: ['--enable-automation'],
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled',
-        '--use-fake-ui-for-media-stream',
-        '--use-fake-device-for-media-stream',
-        '--autoplay-policy=no-user-gesture-required',
-        '--window-size=1280,720',
-        ...(process.env.BOT_USER_DATA_DIR
-          ? [`--user-data-dir=${process.env.BOT_USER_DATA_DIR}`]
-          : []),
-      ],
-      defaultViewport: headed ? null : { width: 1280, height: 720 },
-    })
+    try {
+      this.browser = await puppeteer.launch({
+        executablePath: CHROME_PATH,
+        headless: !headed,
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-blink-features=AutomationControlled',
+          '--use-fake-ui-for-media-stream',
+          '--use-fake-device-for-media-stream',
+          '--autoplay-policy=no-user-gesture-required',
+          '--window-size=1280,720',
+          '--disable-gpu',
+          ...(process.env.BOT_USER_DATA_DIR
+            ? [`--user-data-dir=${process.env.BOT_USER_DATA_DIR}`]
+            : []),
+        ],
+        defaultViewport: { width: 1280, height: 720 },
+      })
+    } catch (error) {
+      log('puppeteer.launch FAILED', error)
+      throw error
+    }
 
+    log('browser launched')
     this.page = await this.browser.newPage()
     this.page.setDefaultTimeout(30_000)
+    this.page.on('console', (msg) => {
+      log(`page.console[${msg.type()}] ${msg.text()}`)
+    })
+    this.page.on('pageerror', (err) => {
+      log('pageerror', err.message)
+    })
     await this.page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
     })
 
     try {
-      console.log(`[meet] goto ${payload.meetLink}`)
+      log(`goto ${payload.meetLink}`)
       await this.page.goto(payload.meetLink, {
         waitUntil: 'domcontentloaded',
         timeout: 120_000,
       })
-      await sleep(3000)
+      await Bun.sleep(3000)
+
+      const url = this.page.url()
+      const title = await this.page.title()
+      const preview = await this.page.evaluate(
+        () => (document.body?.innerText || '').slice(0, 500),
+      )
+      log(`landed url=${url} title=${title}`)
+      log(`page text preview:\n${preview}`)
 
       const blocked = await this.page.evaluate(() => {
         const text = (document.body?.innerText || '').toLowerCase()
@@ -247,25 +269,29 @@ export class MeetGuestSession {
         throw new Error(
           "Meet blocked this browser (\"You can't join this video call\"). " +
             'Usually: (1) meeting host settings block guests, (2) Google detected automation, ' +
-            'or (3) guest join requires a signed-in Google account. ' +
-            'Try host settings → allow anyone with the link to ask to join, ' +
-            'or use BOT_USER_DATA_DIR with a Chrome profile already logged into Google.',
+            'or (3) guest join requires a signed-in Google account.',
         )
       }
 
       await dismissNoise(this.page)
-      await sleep(1000)
+      await Bun.sleep(1000)
       await dismissNoise(this.page)
 
       const named = await fillGuestName(this.page, payload.displayName)
       if (!named) {
-        console.warn('[meet] could not fill guest name — continuing anyway')
+        log('could not fill guest name — continuing anyway')
+      } else {
+        log(`guest name filled: ${payload.displayName}`)
       }
 
       await turnOffMedia(this.page)
       await askToJoin(this.page)
-      console.log('[meet] join clicked — waiting for admission')
+      const afterJoin = await this.page.evaluate(
+        () => (document.body?.innerText || '').slice(0, 400),
+      )
+      log('Ask to join clicked — page text:\n' + afterJoin)
     } catch (error) {
+      log('join flow FAILED', error)
       if (this.page) await dumpDebug(this.page, 'join-failed')
       throw error
     }
@@ -278,9 +304,14 @@ export class MeetGuestSession {
     while (Date.now() < deadline) {
       if (await isInMeeting(this.page)) return 'joined'
       if (await isWaitingForHost(this.page)) {
-        console.log('[meet] waiting for host to admit…')
+        log('waiting for host to admit…')
+      } else {
+        const snippet = await this.page.evaluate(
+          () => (document.body?.innerText || '').slice(0, 200),
+        )
+        log(`still not in lobby/meeting yet — preview: ${snippet.replace(/\s+/g, ' ')}`)
       }
-      await sleep(2000)
+      await Bun.sleep(2000)
     }
 
     if (await isInMeeting(this.page)) return 'joined'
@@ -302,7 +333,7 @@ export class MeetGuestSession {
       ) {
         return
       }
-      await sleep(5000)
+      await Bun.sleep(5000)
     }
   }
 

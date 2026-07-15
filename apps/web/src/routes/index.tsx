@@ -22,6 +22,7 @@ export const Route = createFileRoute('/')({
       meetings: stored.meetings,
       error: sync.error ?? stored.error,
       synced: sync.synced,
+      removed: sync.removed ?? 0,
     }
   },
   component: HomePage,
@@ -41,7 +42,7 @@ function formatWhen(value: Date | string) {
 
 function HomePage() {
   const { session } = Route.useRouteContext()
-  const { meetings, error, synced } = Route.useLoaderData()
+  const { meetings, error, synced, removed } = Route.useLoaderData()
 
   return (
     <main className="page-wrap px-4 py-12">
@@ -54,8 +55,11 @@ function HomePage() {
             Signed in as {session.user.email}
           </p>
           <p className="mt-1 text-xs text-[var(--sea-ink-soft)]">
-            Synced {synced} Meet event{synced === 1 ? '' : 's'} from Google
-            Calendar
+            Synced {synced} Meet event{synced === 1 ? '' : 's'}
+            {removed > 0
+              ? ` · removed ${removed} deleted from Calendar`
+              : ''}{' '}
+            from Google Calendar
           </p>
         </div>
         <button
@@ -113,6 +117,17 @@ function HomePage() {
                     {item.meetLink}
                   </a>
                 ) : null}
+
+                <p className="mt-2 font-mono text-xs text-[var(--sea-ink-soft)]">
+                  workflow: {item.workflowStatus ?? 'none'}
+                  {item.workflowInstanceId
+                    ? ` · id=${item.workflowInstanceId.slice(0, 8)}…`
+                    : ''}
+                  {item.botWakeAt
+                    ? ` · bot wakes ${formatWhen(item.botWakeAt)}`
+                    : ''}
+                  {item.workflowError ? ` · error=${item.workflowError}` : ''}
+                </p>
 
                 {item.participants.length > 0 ? (
                   <ul className="mt-2 space-y-1 text-sm text-[var(--sea-ink-soft)]">

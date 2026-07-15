@@ -1,20 +1,22 @@
 {
   "name": "meet-bot",
-  "private": true,
+  "module": "index.ts",
   "type": "module",
+  "private": true,
   "scripts": {
-    "start": "node dist/server.js",
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/server.ts",
+    "dev": "bun run --hot index.ts",
+    "build": "bun build ./index.ts --outdir ./dist --target bun",
+    "start": "bun run dist/index.js",
     "docker:build": "docker build -t meet-bot .",
     "docker:run": "docker run --rm -p 8080:8080 meet-bot"
   },
-  "dependencies": {
-    "puppeteer-core": "^24.22.0"
-  },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.2"
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.3.0"
   }
 }

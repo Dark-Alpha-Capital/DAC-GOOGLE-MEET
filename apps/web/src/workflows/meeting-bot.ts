@@ -61,11 +61,18 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
         .set({ workflowInstanceId: instanceId })
         .where(eq(meeting.id, meetingId))
 
+      console.log(
+        `[workflow] prepare done meeting=${meetingId} botRun=${botRunId} instance=${instanceId}`,
+      )
       return { botRunId }
     })
 
     const wakeAt = Math.max(Date.now(), startsAtMs - FIVE_MIN_MS)
+    console.log(
+      `[workflow] sleeping until ${new Date(wakeAt).toISOString()} meeting=${meetingId} (T-5 / immediate if already due)`,
+    )
     await step.sleepUntil('wake-t-minus-5', wakeAt)
+    console.log(`[workflow] woke meeting=${meetingId} — launching container`)
 
     await step.do('launch', async () => {
       const database = db(this.env)
@@ -78,7 +85,9 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
         this.env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
         meetingId,
       )
+      console.log(`[workflow] starting container for meeting=${meetingId}`)
       await container.startAndWaitForPorts()
+      console.log(`[workflow] container ready, POST /join meeting=${meetingId}`)
 
       const callbackBaseUrl = this.env.BETTER_AUTH_URL.replace(/\/$/, '')
       const response = await container.fetch(

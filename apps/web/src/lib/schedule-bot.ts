@@ -2,31 +2,38 @@ import { env } from 'cloudflare:workers'
 
 import type { MeetingBotParams } from '#/workflows/meeting-bot'
 
-/** Stable Workflow instance id per meeting. */
+const TERMINAL = new Set(['complete', 'terminated', 'errored'])
+
+/** Stable Workflow instance id per meeting (first schedule). */
 export function workflowInstanceIdForMeeting(meetingId: string) {
   return meetingId
 }
 
-async function terminateIfExists(instanceId: string) {
+async function readStatus(instanceId: string) {
   try {
     const instance = await env.MEETING_BOT_WORKFLOW.get(instanceId)
-    const status = await instance.status()
-    if (
-      status.status === 'complete' ||
-      status.status === 'terminated' ||
-      status.status === 'errored'
-    ) {
-      return
-    }
+    return await instance.status()
+  } catch {
+    return null
+  }
+}
+
+async function terminateIfRunning(instanceId: string) {
+  const status = await readStatus(instanceId)
+  if (!status) return
+  if (TERMINAL.has(status.status)) return
+  try {
+    const instance = await env.MEETING_BOT_WORKFLOW.get(instanceId)
     await instance.terminate()
   } catch {
-    // Instance may not exist yet.
+    // ignore
   }
 }
 
 /**
  * Create or replace the MeetingBotWorkflow for a scheduled Meet.
  * Cancelled / completed meetings terminate any running instance.
+ * Errored / finished instances get a new id (CF IDs are one-shot).
  */
 export async function scheduleMeetingBot(input: {
   meetingId: string
@@ -38,28 +45,52 @@ export async function scheduleMeetingBot(input: {
   previousMeetLink?: string | null
   previousWorkflowInstanceId?: string | null
 }): Promise<string | null> {
-  const instanceId = workflowInstanceIdForMeeting(input.meetingId)
+  const baseId = workflowInstanceIdForMeeting(input.meetingId)
+  const wakeAt = new Date(
+    Math.max(Date.now(), input.startsAt.getTime() - 5 * 60 * 1000),
+  )
 
   if (input.status !== 'scheduled' || !input.meetLink) {
-    await terminateIfExists(instanceId)
+    console.log(
+      `[workflow] skip/terminate meeting=${input.meetingId} status=${input.status}`,
+    )
+    if (input.previousWorkflowInstanceId) {
+      await terminateIfRunning(input.previousWorkflowInstanceId)
+    }
+    await terminateIfRunning(baseId)
     return null
   }
+
+  const previousId = input.previousWorkflowInstanceId
+  const previousStatus = previousId ? await readStatus(previousId) : null
 
   const scheduleChanged =
     input.previousStartsAtMs !== undefined &&
     (input.previousStartsAtMs !== input.startsAt.getTime() ||
       input.previousMeetLink !== input.meetLink)
 
-  const needsCreate =
-    !input.previousWorkflowInstanceId ||
-    scheduleChanged ||
-    input.previousWorkflowInstanceId !== instanceId
+  const previousDead =
+    !previousId ||
+    !previousStatus ||
+    TERMINAL.has(previousStatus.status)
 
-  if (!needsCreate) {
-    return input.previousWorkflowInstanceId ?? null
+  const needsCreate = previousDead || scheduleChanged
+
+  if (!needsCreate && previousId) {
+    console.log(
+      `[workflow] already scheduled meeting=${input.meetingId} id=${previousId} status=${previousStatus?.status} wakeAt=${wakeAt.toISOString()}`,
+    )
+    return previousId
   }
 
-  await terminateIfExists(instanceId)
+  if (previousId) {
+    await terminateIfRunning(previousId)
+  }
+
+  // CF workflow instance ids are unique forever — use a fresh id after errors/resyncs.
+  const instanceId = previousDead || scheduleChanged
+    ? `${baseId}-${Date.now()}`
+    : baseId
 
   const params: MeetingBotParams = {
     meetingId: input.meetingId,
@@ -74,5 +105,25 @@ export async function scheduleMeetingBot(input: {
     params,
   })
 
+  console.log(
+    `[workflow] created meeting=${input.meetingId} id=${instanceId} reason=${previousDead ? previousStatus?.status ?? 'missing' : 'schedule-changed'} startsAt=${input.startsAt.toISOString()} wakeAt=${wakeAt.toISOString()}`,
+  )
+
   return instanceId
+}
+
+/** Live Workflow instance status for UI / debugging. */
+export async function getWorkflowStatus(instanceId: string | null | undefined) {
+  if (!instanceId) return null
+  try {
+    const instance = await env.MEETING_BOT_WORKFLOW.get(instanceId)
+    const status = await instance.status()
+    return {
+      id: instanceId,
+      status: status.status,
+      error: status.error ?? null,
+    }
+  } catch {
+    return { id: instanceId, status: 'missing' as const, error: null }
+  }
 }

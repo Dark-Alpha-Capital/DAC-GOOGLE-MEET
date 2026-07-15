@@ -1,6 +1,6 @@
 # Meet Bot (Chromium guest joiner)
 
-Docker image run by Cloudflare Containers (`MeetBotContainer`).
+Bun app run by Cloudflare Containers (`MeetBotContainer`).
 
 ## Endpoints
 
@@ -9,12 +9,13 @@ Docker image run by Cloudflare Containers (`MeetBotContainer`).
 - `POST /join` — start guest Ask-to-join + record (202)
 - `POST /stop` — leave / tear down browser
 
-## Local run
+## Local
 
 ```bash
-npm install
-npm run build
-# Requires Chromium + PulseAudio + ffmpeg on the host, or use Docker:
-docker build -t meet-bot .
-docker run --rm -p 8080:8080 meet-bot
+bun install
+bun run dev
+
+# Or Docker:
+bun run docker:build
+bun run docker:run
 ```
