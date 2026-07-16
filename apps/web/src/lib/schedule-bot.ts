@@ -173,6 +173,8 @@ export type WorkflowUiStatus = {
   error: unknown
 }
 
+const WORKFLOW_STATUS_TIMEOUT_MS = 4_000
+
 export function formatWorkflowError(error: unknown): string | null {
   if (error == null) return null
   if (typeof error === 'string') return error
@@ -184,14 +186,24 @@ export async function getWorkflowStatus(
 ): Promise<WorkflowUiStatus | null> {
   if (!instanceId) return null
   try {
-    const instance = await env.MEETING_BOT_WORKFLOW.get(instanceId)
-    const status = await instance.status()
+    const status = await Promise.race([
+      (async () => {
+        const instance = await env.MEETING_BOT_WORKFLOW.get(instanceId)
+        return instance.status()
+      })(),
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error('workflow status timeout')),
+          WORKFLOW_STATUS_TIMEOUT_MS,
+        )
+      }),
+    ])
     return {
       id: instanceId,
       status: status.status,
       error: status.error ?? null,
     }
   } catch {
-    return { id: instanceId, status: 'missing' as const, error: null }
+    return { id: instanceId, status: 'missing', error: null }
   }
 }

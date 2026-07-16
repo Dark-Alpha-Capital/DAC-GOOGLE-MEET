@@ -243,16 +243,25 @@ export const syncMeetingsFromCalendar = createServerFn({
       )
     }
 
-    const workflowInstanceId = await scheduleMeetingBot({
-      meetingId,
-      meetLink,
-      startsAt,
-      endsAt,
-      status,
-      previousStartsAtMs: existing?.startsAt.getTime(),
-      previousMeetLink: existing?.meetLink,
-      previousWorkflowInstanceId: existing?.workflowInstanceId,
-    })
+    let workflowInstanceId: string | null = null
+    try {
+      workflowInstanceId = await scheduleMeetingBot({
+        meetingId,
+        meetLink,
+        startsAt,
+        endsAt,
+        status,
+        previousStartsAtMs: existing?.startsAt.getTime(),
+        previousMeetLink: existing?.meetLink,
+        previousWorkflowInstanceId: existing?.workflowInstanceId,
+      })
+    } catch (error) {
+      console.error(
+        `[calendar] scheduleMeetingBot failed meeting=${meetingId}:`,
+        error,
+      )
+      workflowInstanceId = existing?.workflowInstanceId ?? null
+    }
 
     await db
       .update(meeting)

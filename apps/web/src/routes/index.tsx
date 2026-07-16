@@ -17,8 +17,32 @@ export const Route = createFileRoute('/')({
     return { session }
   },
   loader: async () => {
-    const sync = await syncMeetingsFromCalendar()
-    const stored = await getStoredMeetings()
+    let sync: { synced: number; removed: number; error?: string } = {
+      synced: 0,
+      removed: 0,
+    }
+    let stored: {
+      meetings: MeetingWithParticipants[]
+      recent: MeetingWithParticipants[]
+      error?: string
+    } = { meetings: [], recent: [] }
+
+    try {
+      sync = await syncMeetingsFromCalendar()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[home] calendar sync failed:', message)
+      sync = { synced: 0, removed: 0, error: message }
+    }
+
+    try {
+      stored = await getStoredMeetings()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[home] getStoredMeetings failed:', message)
+      stored = { meetings: [], recent: [], error: message }
+    }
+
     return {
       meetings: stored.meetings,
       recent: stored.recent,
