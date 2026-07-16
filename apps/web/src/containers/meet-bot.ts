@@ -11,6 +11,12 @@ export class MeetBotContainer extends Container {
   pingEndpoint = '/health'
   envVars = {
     BOT_HEADED: '1',
+    /** Use baked Chromium profile at /data/chrome (roghankundra session). */
+    USE_CHROME_PROFILE: '1',
+    BOT_USER_DATA_DIR: '/data/chrome',
+    BOT_PROFILE_DIRECTORY: 'Default',
+    /** Docker has PulseAudio meet_sink — not browser MediaRecorder. */
+    BOT_RECORD_MODE: 'ffmpeg',
   }
 
   override async onActivityExpired(): Promise<void> {
