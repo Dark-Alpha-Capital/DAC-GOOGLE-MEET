@@ -5,6 +5,11 @@ import { transcribeAudio } from '@repo/ai'
 
 import { getDb } from '#/db'
 import { botRun, meeting, meetingNotes } from '#/db/schema'
+import {
+  parseAttendeesJson,
+  recordAttendance,
+  type MeetingAttendee,
+} from '#/lib/attendance'
 import { getStorage } from '#/lib/storage'
 import type { RecordingDonePayload } from '#/workflows/meeting-bot'
 
@@ -108,6 +113,12 @@ export const Route = createFileRoute('/api/bot/complete')({
           ? String(form.get('errorMessage'))
           : undefined
         const file = form.get('recording')
+        const attendeesRaw = form.get('attendees')
+          ? String(form.get('attendees'))
+          : ''
+        const attendees: MeetingAttendee[] = attendeesRaw
+          ? parseAttendeesJson(attendeesRaw)
+          : []
 
         if (!botRunId || !meetingId || !workflowInstanceId) {
           return Response.json({ error: 'Missing fields' }, { status: 400 })
@@ -193,6 +204,37 @@ export const Route = createFileRoute('/api/bot/complete')({
         const combinedError =
           [errorMessage, uploadError].filter(Boolean).join(' | ') || null
 
+        let attendanceSyncStatus: string | null = null
+        let attendanceSyncError: string | null = null
+
+        if (status === 'left') {
+          try {
+            const attendanceResult = await recordAttendance(
+              {
+                meetingId,
+                botRunId,
+                title: meetingRow?.title ?? 'meeting',
+                meetLink: meetingRow?.meetLink ?? null,
+                startedAt: meetingRow?.startsAt?.toISOString() ?? null,
+                endedAt: new Date().toISOString(),
+                attendees,
+              },
+              {
+                apiUrl: env.ATTENDANCE_API_URL,
+                apiKey: env.ATTENDANCE_API_KEY,
+              },
+            )
+            attendanceSyncStatus = attendanceResult.mode
+          } catch (error) {
+            attendanceSyncStatus = 'failed'
+            attendanceSyncError =
+              error instanceof Error ? error.message : String(error)
+            console.error('[bot/complete] attendance sync FAILED:', attendanceSyncError)
+          }
+        } else {
+          attendanceSyncStatus = 'skipped'
+        }
+
         await getDb()
           .update(botRun)
           .set({
@@ -200,6 +242,10 @@ export const Route = createFileRoute('/api/bot/complete')({
             recordingKey,
             transcriptKey,
             transcriptText,
+            attendeesJson:
+              attendees.length > 0 ? JSON.stringify(attendees) : null,
+            attendanceSyncStatus,
+            attendanceSyncError,
             errorMessage: combinedError,
             leftAt: new Date(),
           })
@@ -249,6 +295,8 @@ export const Route = createFileRoute('/api/bot/complete')({
           transcriptUrl,
           transcriptPreview: transcriptText?.slice(0, 280) ?? null,
           notesId: notes?.notesId ?? null,
+          attendeesCount: attendees.length,
+          attendanceSyncStatus,
           status,
           uploadError,
         })

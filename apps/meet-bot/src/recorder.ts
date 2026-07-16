@@ -204,6 +204,7 @@ export class AudioRecorder {
     payload: JoinPayload,
     status: 'left' | 'failed',
     errorMessage?: string,
+    attendees?: Array<{ name: string; email?: string | null }>,
   ) {
     const form = new FormData()
     form.set('botRunId', payload.botRunId)
@@ -211,6 +212,9 @@ export class AudioRecorder {
     form.set('workflowInstanceId', payload.workflowInstanceId)
     form.set('status', status)
     if (errorMessage) form.set('errorMessage', errorMessage)
+    if (attendees && attendees.length > 0) {
+      form.set('attendees', JSON.stringify(attendees))
+    }
 
     let hadFile = false
     try {

@@ -10,3 +10,6 @@ OPENAI_API_KEY=
 NEXTCLOUD_URL=
 NEXTCLOUD_USER=
 NEXTCLOUD_PASSWORD=
+# Optional — when unset, attendance POSTs are logged as simulated
+# ATTENDANCE_API_URL=
+# ATTENDANCE_API_KEY=

@@ -36,6 +36,13 @@
       "when": 1783941000000,
       "tag": "0004_meeting_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1783942000000,
+      "tag": "0005_attendance",
+      "breakpoints": true
     }
   ]
 }

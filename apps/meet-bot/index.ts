@@ -70,6 +70,12 @@ async function finishAndUpload(
 ) {
   finalizing = true
   try {
+    let attendees: Array<{ name: string; email?: string | null }> = []
+    try {
+      attendees = (await session?.collectAttendees()) ?? []
+    } catch {
+      // ignore
+    }
     try {
       await session?.leave()
     } catch {
@@ -84,7 +90,7 @@ async function finishAndUpload(
         )
       }
     }
-    await recorder?.upload(payload, outcome, errorMessage)
+    await recorder?.upload(payload, outcome, errorMessage, attendees)
   } finally {
     finalizing = false
   }

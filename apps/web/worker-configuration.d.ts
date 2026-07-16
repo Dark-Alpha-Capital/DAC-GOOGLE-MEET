@@ -11,6 +11,8 @@ interface __BaseEnv_Env {
     GOOGLE_CLIENT_SECRET: string;
     BOT_INTERNAL_SECRET: string;
     OPENAI_API_KEY: string;
+    ATTENDANCE_API_URL?: string;
+    ATTENDANCE_API_KEY?: string;
     NEXTCLOUD_URL: string;
     NEXTCLOUD_USER: string;
     NEXTCLOUD_PASSWORD: string;

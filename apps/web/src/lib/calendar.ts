@@ -8,7 +8,7 @@ import { getAuth } from '#/lib/auth'
 import {
   getWorkflowStatus,
   formatWorkflowError,
-  scheduleMeetingBot,
+  cancelMeetingBot,
 } from '#/lib/schedule-bot'
 
 export type BotRunSummary = {
@@ -243,30 +243,17 @@ export const syncMeetingsFromCalendar = createServerFn({
       )
     }
 
-    let workflowInstanceId: string | null = null
-    try {
-      workflowInstanceId = await scheduleMeetingBot({
+    // Bot workflows are started manually from the UI — never auto-schedule on sync.
+    if (status === 'cancelled' && existing?.workflowInstanceId) {
+      await cancelMeetingBot({
         meetingId,
-        meetLink,
-        startsAt,
-        endsAt,
-        status,
-        previousStartsAtMs: existing?.startsAt.getTime(),
-        previousMeetLink: existing?.meetLink,
-        previousWorkflowInstanceId: existing?.workflowInstanceId,
+        previousWorkflowInstanceId: existing.workflowInstanceId,
       })
-    } catch (error) {
-      console.error(
-        `[calendar] scheduleMeetingBot failed meeting=${meetingId}:`,
-        error,
-      )
-      workflowInstanceId = existing?.workflowInstanceId ?? null
+      await db
+        .update(meeting)
+        .set({ workflowInstanceId: null })
+        .where(eq(meeting.id, meetingId))
     }
-
-    await db
-      .update(meeting)
-      .set({ workflowInstanceId })
-      .where(eq(meeting.id, meetingId))
 
     synced += 1
   }
@@ -285,12 +272,8 @@ export const syncMeetingsFromCalendar = createServerFn({
   for (const local of staleLocals) {
     if (seenGoogleIds.has(local.googleEventId)) continue
 
-    await scheduleMeetingBot({
+    await cancelMeetingBot({
       meetingId: local.id,
-      meetLink: local.meetLink,
-      startsAt: local.startsAt,
-      endsAt: local.endsAt,
-      status: 'cancelled',
       previousWorkflowInstanceId: local.workflowInstanceId,
     })
 
@@ -321,11 +304,20 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
       return { meetings: [], recent: [], error: 'Not signed in' }
     }
 
+    // Window for day-by-day UI (prev/next day navigation).
+    const windowStart = new Date()
+    windowStart.setHours(0, 0, 0, 0)
+    windowStart.setDate(windowStart.getDate() - 7)
+    const windowEnd = new Date()
+    windowEnd.setHours(23, 59, 59, 999)
+    windowEnd.setDate(windowEnd.getDate() + 21)
+
     const rows = await getDb().query.meeting.findMany({
       where: and(
         eq(meeting.userId, session.user.id),
-        eq(meeting.status, 'scheduled'),
-        gte(meeting.endsAt, new Date()),
+        gte(meeting.startsAt, windowStart),
+        lte(meeting.startsAt, windowEnd),
+        inArray(meeting.status, ['scheduled', 'completed', 'cancelled']),
       ),
       orderBy: [asc(meeting.startsAt)],
       with: {

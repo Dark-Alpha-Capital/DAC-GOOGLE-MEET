@@ -61,11 +61,8 @@ async function isBotStuckOrFailed(meetingId: string, startsAt: Date) {
 }
 
 /**
- * Create or replace the MeetingBotWorkflow for a scheduled Meet.
- * Cancelled / completed meetings terminate any running instance.
- * Errored / stuck / finished instances get a new id (CF IDs are one-shot).
- *
- * In-progress meetings: wakeAt = now → join immediately (no wait for wall clock).
+ * Create or replace the MeetingBotWorkflow for a Meet — only when the user
+ * explicitly requests the bot (manual). Do not call from calendar sync/cron.
  */
 export async function scheduleMeetingBot(input: {
   meetingId: string
@@ -206,4 +203,15 @@ export async function getWorkflowStatus(
   } catch {
     return { id: instanceId, status: 'missing', error: null }
   }
+}
+
+/** Cancel any in-flight workflow for a meeting (e.g. calendar event deleted). */
+export async function cancelMeetingBot(input: {
+  meetingId: string
+  previousWorkflowInstanceId?: string | null
+}) {
+  if (input.previousWorkflowInstanceId) {
+    await terminateIfRunning(input.previousWorkflowInstanceId)
+  }
+  await terminateIfRunning(workflowInstanceIdForMeeting(input.meetingId))
 }

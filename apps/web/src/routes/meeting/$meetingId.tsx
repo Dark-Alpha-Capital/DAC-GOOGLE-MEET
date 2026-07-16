@@ -173,6 +173,7 @@ function MeetingDetailPage() {
           <TabsList>
             <TabsTrigger value="transcript">Transcript</TabsTrigger>
             <TabsTrigger value="summary">AI summary</TabsTrigger>
+            <TabsTrigger value="attendance">Attendance</TabsTrigger>
           </TabsList>
 
           <TabsContent value="transcript" className="mt-4">
@@ -251,6 +252,39 @@ function MeetingDetailPage() {
                     </ul>
                   )}
                 </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="attendance" className="mt-4">
+            {!run ? (
+              <p className="text-sm text-[var(--sea-ink-soft)]">
+                No bot run yet.
+              </p>
+            ) : run.attendees.length === 0 ? (
+              <p className="text-sm text-[var(--sea-ink-soft)]">
+                No live attendees captured yet
+                {run.status === 'left'
+                  ? ' (Meet UI may hide names from the bot).'
+                  : ' — available after the bot leaves.'}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-[var(--sea-ink-soft)]">
+                  Sync:{' '}
+                  {run.attendanceSyncStatus ?? '—'}
+                  {run.attendanceSyncError
+                    ? ` · ${run.attendanceSyncError}`
+                    : ''}
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--sea-ink)]">
+                  {run.attendees.map((person, i) => (
+                    <li key={`${person.name}-${i}`}>
+                      {person.name}
+                      {person.email ? ` · ${person.email}` : ''}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </TabsContent>

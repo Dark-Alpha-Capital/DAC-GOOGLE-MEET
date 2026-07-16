@@ -493,11 +493,78 @@ async function refreshPeoplePanel(page: Page) {
   }).catch(() => undefined)
 }
 
+export type ObservedAttendee = {
+  name: string
+  email?: string | null
+}
+
+/**
+ * Scrape visible participant names from Meet's People panel / tiles.
+ * Emails are often unavailable in the guest UI — capture when present.
+ */
+async function scrapeAttendees(page: Page): Promise<ObservedAttendee[]> {
+  return page.evaluate(() => {
+    const results: Array<{ name: string; email?: string | null }> = []
+    const seen = new Set<string>()
+
+    const push = (raw: string, email?: string | null) => {
+      const name = raw.replace(/\s+/g, ' ').trim()
+      if (!name || name.length < 2 || name.length > 80) return
+      const lower = name.toLowerCase()
+      if (
+        lower === 'you' ||
+        lower.includes('people') ||
+        lower.includes('contributors') ||
+        lower.includes('meeting host') ||
+        lower.includes('ask to join') ||
+        lower.includes('present now') ||
+        lower.includes('share screen')
+      ) {
+        return
+      }
+      const key = `${lower}|${(email || '').toLowerCase()}`
+      if (seen.has(key)) return
+      seen.add(key)
+      results.push({ name, email: email || null })
+    }
+
+    // People list rows often expose aria-label / data-participant-id text
+    for (const el of Array.from(
+      document.querySelectorAll(
+        '[data-participant-id], [data-self-name], [aria-label*="@"], div[role="listitem"]',
+      ),
+    )) {
+      const aria = (el.getAttribute('aria-label') || '').trim()
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
+      const source = aria || text
+      if (!source) continue
+      const emailMatch = source.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)
+      const namePart = source
+        .split(/[·|•\n]/)[0]
+        ?.replace(emailMatch?.[0] || '', '')
+        .trim()
+      if (namePart) push(namePart, emailMatch?.[0] || null)
+    }
+
+    // Video tile name overlays
+    for (const el of Array.from(
+      document.querySelectorAll('[data-self-name], span[class*="name"]'),
+    )) {
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
+      if (text) push(text)
+    }
+
+    return results
+  })
+}
+
 export class MeetGuestSession {
   private browser: Browser | null = null
   private page: Page | null = null
   /** When true, we attached to a user-started Chrome — do not quit it on close(). */
   private attachedOnly = false
+  /** Cumulative attendees observed during the call (names / emails when available). */
+  private attendees = new Map<string, ObservedAttendee>()
 
   async start(payload: JoinPayload) {
     const cdpUrl = (process.env.BOT_CDP_URL || '').replace(/\/$/, '')
@@ -787,6 +854,15 @@ export class MeetGuestSession {
       if (tick % 3 === 0) {
         await refreshPeoplePanel(this.page)
         await Bun.sleep(500)
+        try {
+          const batch = await scrapeAttendees(this.page)
+          for (const person of batch) {
+            const key = `${person.name.toLowerCase()}|${(person.email || '').toLowerCase()}`
+            this.attendees.set(key, person)
+          }
+        } catch {
+          // ignore scrape failures
+        }
       }
       tick += 1
 
@@ -825,6 +901,26 @@ export class MeetGuestSession {
 
   getPage() {
     return this.page
+  }
+
+  /** Final scrape + return all attendees seen during the call. */
+  async collectAttendees(): Promise<ObservedAttendee[]> {
+    if (this.page) {
+      try {
+        await refreshPeoplePanel(this.page)
+        await Bun.sleep(400)
+        const batch = await scrapeAttendees(this.page)
+        for (const person of batch) {
+          const key = `${person.name.toLowerCase()}|${(person.email || '').toLowerCase()}`
+          this.attendees.set(key, person)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const list = Array.from(this.attendees.values())
+    log(`collected ${list.length} attendees`)
+    return list
   }
 
   async leave() {

@@ -157,6 +157,11 @@ export const botRun = sqliteTable('bot_run', {
   transcriptKey: text('transcript_key'),
   /** Plain-text transcript for LLM / UI */
   transcriptText: text('transcript_text'),
+  /** JSON array of { name, email? } observed in the live Meet call */
+  attendeesJson: text('attendees_json'),
+  /** pending | simulated | sent | failed | skipped */
+  attendanceSyncStatus: text('attendance_sync_status'),
+  attendanceSyncError: text('attendance_sync_error'),
   errorMessage: text('error_message'),
   workflowInstanceId: text('workflow_instance_id'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' })

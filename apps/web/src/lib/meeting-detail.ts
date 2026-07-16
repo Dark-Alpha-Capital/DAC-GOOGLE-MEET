@@ -4,6 +4,7 @@ import { and, desc, eq } from 'drizzle-orm'
 
 import { getDb } from '#/db'
 import { botRun, meeting, meetingNotes } from '#/db/schema'
+import { parseAttendeesJson, type MeetingAttendee } from '#/lib/attendance'
 import { getAuth } from '#/lib/auth'
 import { getWorkflowStatus, formatWorkflowError } from '#/lib/schedule-bot'
 
@@ -37,6 +38,9 @@ export type MeetingDetail = {
     recordingKey: string | null
     transcriptKey: string | null
     transcriptText: string | null
+    attendees: MeetingAttendee[]
+    attendanceSyncStatus: string | null
+    attendanceSyncError: string | null
     errorMessage: string | null
     createdAt: Date
   } | null
@@ -53,9 +57,9 @@ export const getMeetingDetail = createServerFn({ method: 'GET' })
   .validator((data: unknown) => {
     const meetingId =
       typeof data === 'object' &&
-      data &&
-      'meetingId' in data &&
-      typeof (data as { meetingId: unknown }).meetingId === 'string'
+        data &&
+        'meetingId' in data &&
+        typeof (data as { meetingId: unknown }).meetingId === 'string'
         ? (data as { meetingId: string }).meetingId
         : ''
     if (!meetingId) throw new Error('meetingId required')
@@ -133,25 +137,28 @@ export const getMeetingDetail = createServerFn({ method: 'GET' })
           })),
           botRun: latest
             ? {
-                id: latest.id,
-                status: latest.status,
-                joinedAt: latest.joinedAt,
-                leftAt: latest.leftAt,
-                recordingKey: latest.recordingKey,
-                transcriptKey: latest.transcriptKey,
-                transcriptText: latest.transcriptText,
-                errorMessage: latest.errorMessage,
-                createdAt: latest.createdAt,
-              }
+              id: latest.id,
+              status: latest.status,
+              joinedAt: latest.joinedAt,
+              leftAt: latest.leftAt,
+              recordingKey: latest.recordingKey,
+              transcriptKey: latest.transcriptKey,
+              transcriptText: latest.transcriptText,
+              attendees: parseAttendeesJson(latest.attendeesJson),
+              attendanceSyncStatus: latest.attendanceSyncStatus,
+              attendanceSyncError: latest.attendanceSyncError,
+              errorMessage: latest.errorMessage,
+              createdAt: latest.createdAt,
+            }
             : null,
           notes: notesRow
             ? {
-                id: notesRow.id,
-                status: notesRow.status,
-                summaryText: notesRow.summaryText,
-                actionItems,
-                errorMessage: notesRow.errorMessage,
-              }
+              id: notesRow.id,
+              status: notesRow.status,
+              summaryText: notesRow.summaryText,
+              actionItems,
+              errorMessage: notesRow.errorMessage,
+            }
             : null,
         },
       }
