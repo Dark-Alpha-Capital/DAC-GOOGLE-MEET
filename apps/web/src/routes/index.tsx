@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 
+import { Skeleton } from '#/components/ui/skeleton'
 import { authClient } from '#/lib/auth-client'
 import {
   getStoredMeetings,
@@ -18,6 +19,7 @@ export const Route = createFileRoute('/')({
     }
     return { session }
   },
+  pendingComponent: HomePending,
   loader: async () => {
     let sync: { synced: number; removed: number; error?: string } = {
       synced: 0,
@@ -55,6 +57,70 @@ export const Route = createFileRoute('/')({
   },
   component: HomePage,
 })
+
+function MeetingRowSkeleton() {
+  return (
+    <li className="py-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-4 w-28" />
+      </div>
+      <Skeleton className="mt-2 h-4 w-20" />
+      <Skeleton className="mt-3 h-4 w-56" />
+      <div className="mt-3 flex gap-3">
+        <Skeleton className="h-7 w-20 rounded-full" />
+        <Skeleton className="h-4 w-24 self-center" />
+      </div>
+      <div className="mt-3 space-y-1.5">
+        <Skeleton className="h-3.5 w-36" />
+        <Skeleton className="h-3.5 w-28" />
+      </div>
+    </li>
+  )
+}
+
+function HomePending() {
+  return (
+    <main className="page-wrap px-4 py-12" aria-busy="true" aria-label="Loading meetings">
+      <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-64 sm:h-14 sm:w-80" />
+          <Skeleton className="h-4 w-52" />
+          <Skeleton className="h-3 w-72" />
+        </div>
+        <Skeleton className="h-10 w-24 rounded-full" />
+      </div>
+
+      <section className="island-shell rounded-2xl px-5 py-6 sm:px-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-3 w-64 max-w-full" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-10 rounded-full" />
+            <Skeleton className="h-8 w-16 rounded-full" />
+            <Skeleton className="h-8 w-10 rounded-full" />
+          </div>
+        </div>
+        <ul className="mt-4 divide-y divide-[var(--line)]">
+          <MeetingRowSkeleton />
+          <MeetingRowSkeleton />
+          <MeetingRowSkeleton />
+        </ul>
+      </section>
+
+      <section className="island-shell mt-8 rounded-2xl px-5 py-6 sm:px-8">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="mt-2 h-3 w-72 max-w-full" />
+        <ul className="mt-4 divide-y divide-[var(--line)]">
+          <MeetingRowSkeleton />
+          <MeetingRowSkeleton />
+        </ul>
+      </section>
+    </main>
+  )
+}
 
 function startOfLocalDay(date: Date) {
   const d = new Date(date)
