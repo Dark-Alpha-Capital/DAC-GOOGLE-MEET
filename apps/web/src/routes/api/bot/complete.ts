@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 import { eq } from 'drizzle-orm'
+import { transcribeAudio } from '@repo/ai'
 
 import { getDb } from '#/db'
-import { botRun, meeting } from '#/db/schema'
+import { botRun, meeting, meetingNotes } from '#/db/schema'
 import { getStorage } from '#/lib/storage'
-import { transcribeAudio } from '#/lib/transcribe'
 import type { RecordingDonePayload } from '#/workflows/meeting-bot'
 
 function unauthorized() {
@@ -28,6 +28,69 @@ function slugify(value: string) {
 
 function dateStamp(date: Date) {
   return date.toISOString().slice(0, 10)
+}
+
+async function sendRecordingDoneWithRetry(
+  workflowInstanceId: string,
+  payload: RecordingDonePayload,
+  attempts = 3,
+) {
+  let lastError: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const instance = await env.MEETING_BOT_WORKFLOW.get(workflowInstanceId)
+      await instance.sendEvent({
+        type: 'recording-done',
+        payload,
+      })
+      return
+    } catch (error) {
+      lastError = error
+      console.error(
+        `[bot/complete] sendEvent attempt ${i + 1}/${attempts} failed:`,
+        error,
+      )
+    }
+  }
+  throw lastError
+}
+
+async function startNotesWorkflow(input: {
+  botRunId: string
+  meetingId: string
+  hasTranscript: boolean
+}) {
+  if (!input.hasTranscript) {
+    console.log(
+      `[bot/complete] skip notes workflow — no transcript for botRun=${input.botRunId}`,
+    )
+    return null
+  }
+
+  const notesId = crypto.randomUUID()
+  const instanceId = `notes-${input.botRunId}-${Date.now()}`
+
+  await getDb().insert(meetingNotes).values({
+    id: notesId,
+    botRunId: input.botRunId,
+    meetingId: input.meetingId,
+    status: 'pending',
+    workflowInstanceId: instanceId,
+  })
+
+  await env.MEETING_NOTES_WORKFLOW.create({
+    id: instanceId,
+    params: {
+      notesId,
+      botRunId: input.botRunId,
+      meetingId: input.meetingId,
+    },
+  })
+
+  console.log(
+    `[bot/complete] started notes workflow ${instanceId} notes=${notesId}`,
+  )
+  return { notesId, instanceId }
 }
 
 export const Route = createFileRoute('/api/bot/complete')({
@@ -68,7 +131,6 @@ export const Route = createFileRoute('/api/bot/complete')({
         const folder = `transcripts/${day}/${titleSlug}`
 
         if (file instanceof File && file.size > 0) {
-          // Audio-only webm from the bot MediaRecorder (not full video)
           recordingKey = `${folder}/${botRunId}.webm`
           transcriptKey = `${folder}/${botRunId}.txt`
           try {
@@ -82,7 +144,18 @@ export const Route = createFileRoute('/api/bot/complete')({
             )
 
             try {
-              transcriptText = await transcribeAudio(env.AI, bytes)
+              const apiKey = env.OPENAI_API_KEY
+              if (!apiKey) {
+                throw new Error('OPENAI_API_KEY is not configured')
+              }
+              transcriptText = await transcribeAudio(
+                {
+                  bytes,
+                  filename: `${botRunId}.webm`,
+                  contentType: file.type || 'audio/webm',
+                },
+                apiKey,
+              )
               const putTxt = await getStorage().put(
                 transcriptKey,
                 transcriptText,
@@ -118,9 +191,7 @@ export const Route = createFileRoute('/api/bot/complete')({
         }
 
         const combinedError =
-          [errorMessage, uploadError]
-            .filter(Boolean)
-            .join(' | ') || null
+          [errorMessage, uploadError].filter(Boolean).join(' | ') || null
 
         await getDb()
           .update(botRun)
@@ -149,17 +220,25 @@ export const Route = createFileRoute('/api/bot/complete')({
         }
 
         try {
-          const instance =
-            await env.MEETING_BOT_WORKFLOW.get(workflowInstanceId)
-          await instance.sendEvent({
-            type: 'recording-done',
-            payload,
-          })
+          await sendRecordingDoneWithRetry(workflowInstanceId, payload)
         } catch (error) {
           console.error(
-            `[bot/complete] sendEvent failed for ${workflowInstanceId}:`,
+            `[bot/complete] sendEvent exhausted for ${workflowInstanceId}:`,
             error,
           )
+        }
+
+        let notes: { notesId: string; instanceId: string } | null = null
+        if (status === 'left' && transcriptText) {
+          try {
+            notes = await startNotesWorkflow({
+              botRunId,
+              meetingId,
+              hasTranscript: true,
+            })
+          } catch (error) {
+            console.error('[bot/complete] failed to start notes workflow', error)
+          }
         }
 
         return Response.json({
@@ -169,6 +248,7 @@ export const Route = createFileRoute('/api/bot/complete')({
           transcriptKey,
           transcriptUrl,
           transcriptPreview: transcriptText?.slice(0, 280) ?? null,
+          notesId: notes?.notesId ?? null,
           status,
           uploadError,
         })

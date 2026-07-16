@@ -16,15 +16,31 @@ export USE_CHROME_PROFILE="${USE_CHROME_PROFILE:-1}"
 export BOT_USER_DATA_DIR="${BOT_USER_DATA_DIR:-/data/chrome}"
 export BOT_PROFILE_DIRECTORY="${BOT_PROFILE_DIRECTORY:-Default}"
 export BOT_RECORD_MODE="${BOT_RECORD_MODE:-ffmpeg}"
+export PULSE_SINK="${PULSE_SINK:-meet_sink}"
+export PULSE_SOURCE="${PULSE_SOURCE:-meet_sink.monitor}"
 
 # Give Xvfb a moment to come up
 sleep 0.5
 
-if [ ! -d "$BOT_USER_DATA_DIR/Default" ]; then
-  echo "[entrypoint] WARNING: no Chrome profile at $BOT_USER_DATA_DIR/Default — Meet joins will be guest/blocked"
-else
+PROFILE_DIR="$BOT_USER_DATA_DIR/$BOT_PROFILE_DIRECTORY"
+COOKIES="$PROFILE_DIR/Cookies"
+COOKIES_DB="$PROFILE_DIR/Network/Cookies"
+
+if [ "$USE_CHROME_PROFILE" = "1" ]; then
+  if [ ! -d "$PROFILE_DIR" ]; then
+    echo "[entrypoint] ERROR: USE_CHROME_PROFILE=1 but missing $PROFILE_DIR"
+    echo "[entrypoint] Bootstrap a Linux Chromium login — see scripts/bootstrap-linux-profile.md"
+    exit 1
+  fi
+  if [ ! -f "$COOKIES" ] && [ ! -f "$COOKIES_DB" ]; then
+    echo "[entrypoint] ERROR: no Cookies file under $PROFILE_DIR — Google session missing"
+    echo "[entrypoint] Sign in inside Linux Chromium, then rebuild the image."
+    exit 1
+  fi
   echo "[entrypoint] using Chrome profile $BOT_USER_DATA_DIR ($BOT_PROFILE_DIRECTORY)"
+else
+  echo "[entrypoint] WARNING: USE_CHROME_PROFILE off — guest joins will likely be blocked by Meet"
 fi
 
-echo "[entrypoint] DISPLAY=$DISPLAY BOT_HEADED=$BOT_HEADED USE_CHROME_PROFILE=$USE_CHROME_PROFILE — starting meet-bot"
+echo "[entrypoint] DISPLAY=$DISPLAY BOT_HEADED=$BOT_HEADED PULSE_SINK=$PULSE_SINK — starting meet-bot"
 exec bun run dist/index.js

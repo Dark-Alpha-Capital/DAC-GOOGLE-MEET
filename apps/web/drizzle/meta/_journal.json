@@ -22,6 +22,20 @@
       "when": 1783937000000,
       "tag": "0002_bot_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1783940000000,
+      "tag": "0003_transcript",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1783941000000,
+      "tag": "0004_meeting_notes",
+      "breakpoints": true
     }
   ]
 }

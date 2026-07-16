@@ -1,19 +1,20 @@
 {
-  "name": "ai",
-  "module": "index.ts",
-  "type": "module",
+  "name": "@repo/ai",
+  "version": "0.0.0",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "scripts": {
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.15",
-    "@ai-sdk/react": "^4.0.32",
-    "ai": "^7.0.29",
     "openai": "^6.47.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+    "typescript": "5.9.2"
   }
 }

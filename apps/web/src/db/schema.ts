@@ -188,15 +188,6 @@ export const accountRelations = relations(account, ({ one }) => ({
   }),
 }))
 
-export const meetingRelations = relations(meeting, ({ one, many }) => ({
-  user: one(user, {
-    fields: [meeting.userId],
-    references: [user.id],
-  }),
-  participants: many(participant),
-  botRuns: many(botRun),
-}))
-
 export const participantRelations = relations(participant, ({ one }) => ({
   meeting: one(meeting, {
     fields: [participant.meetingId],
@@ -204,9 +195,56 @@ export const participantRelations = relations(participant, ({ one }) => ({
   }),
 }))
 
-export const botRunRelations = relations(botRun, ({ one }) => ({
+/** AI-generated notes for a bot run (summary + action items). */
+export const meetingNotes = sqliteTable('meeting_notes', {
+  id: text('id').primaryKey(),
+  botRunId: text('bot_run_id')
+    .notNull()
+    .references(() => botRun.id, { onDelete: 'cascade' }),
+  meetingId: text('meeting_id')
+    .notNull()
+    .references(() => meeting.id, { onDelete: 'cascade' }),
+  /** pending | running | ready | failed */
+  status: text('status').notNull().default('pending'),
+  summaryText: text('summary_text'),
+  /** JSON array of { text, assignee?, dueDate? } */
+  actionItems: text('action_items'),
+  errorMessage: text('error_message'),
+  workflowInstanceId: text('workflow_instance_id'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .$onUpdate(() => new Date())
+    .notNull(),
+})
+
+export const meetingRelations = relations(meeting, ({ one, many }) => ({
+  user: one(user, {
+    fields: [meeting.userId],
+    references: [user.id],
+  }),
+  participants: many(participant),
+  botRuns: many(botRun),
+  notes: many(meetingNotes),
+}))
+
+export const botRunRelations = relations(botRun, ({ one, many }) => ({
   meeting: one(meeting, {
     fields: [botRun.meetingId],
+    references: [meeting.id],
+  }),
+  notes: many(meetingNotes),
+}))
+
+export const meetingNotesRelations = relations(meetingNotes, ({ one }) => ({
+  botRun: one(botRun, {
+    fields: [meetingNotes.botRunId],
+    references: [botRun.id],
+  }),
+  meeting: one(meeting, {
+    fields: [meetingNotes.meetingId],
     references: [meeting.id],
   }),
 }))

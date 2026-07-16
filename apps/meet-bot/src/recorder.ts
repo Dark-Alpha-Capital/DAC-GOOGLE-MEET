@@ -23,6 +23,15 @@ export class AudioRecorder {
     this.outputPath = path.join('/tmp', `recording-${botRunId}.webm`)
   }
 
+  async hasAudioFile(): Promise<boolean> {
+    try {
+      const file = Bun.file(this.outputPath)
+      return (await file.exists()) && file.size > 0
+    } catch {
+      return false
+    }
+  }
+
   async start(page?: Page | null) {
     if (this.mode) return
 

@@ -28,6 +28,7 @@
     "@cloudflare/containers": "^0.3.7",
     "@faker-js/faker": "^10.3.0",
     "@hookform/resolvers": "^5.4.0",
+    "@repo/ai": "workspace:*",
     "@repo/storage": "workspace:*",
     "@shadcn/react": "^0.2.1",
     "@tailwindcss/vite": "^4.1.18",

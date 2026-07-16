@@ -17,7 +17,9 @@ Safer long-term options (not required for MVP): restore an encrypted profile fro
 
 Mac→Linux profile copies often lose login (Keychain / cookie encryption). Prefer logging in **once inside Linux Chromium**, then bake that directory.
 
-## Bootstrap (one-time)
+`bun run sync:chrome-profile` (Mac Profile 5 → `chrome-user-data`) is for **local experiments only**. Do **not** treat it as production-ready for Cloudflare Containers.
+
+## Bootstrap (one-time, required before `deploy:containers`)
 
 ```bash
 cd apps/meet-bot
@@ -39,4 +41,19 @@ chromium --user-data-dir=/data/chrome --no-sandbox --disable-dev-shm-usage \
 # Sign in as the bot Gmail, open meet.google.com once, quit Chromium, exit.
 ```
 
-Then deploy from `apps/web` (`bun run deploy:containers`). The Dockerfile `COPY chrome-user-data /data/chrome` bakes the session into the image.
+Confirm cookies exist:
+
+```bash
+ls chrome-user-data/Default/Cookies chrome-user-data/Default/Network/Cookies 2>/dev/null
+```
+
+The container entrypoint **exits with an error** if `USE_CHROME_PROFILE=1` and cookies are missing.
+
+Then deploy from `apps/web`:
+
+```bash
+cd apps/web
+bun run deploy:containers
+```
+
+The Dockerfile `COPY chrome-user-data /data/chrome` bakes the session into the image.

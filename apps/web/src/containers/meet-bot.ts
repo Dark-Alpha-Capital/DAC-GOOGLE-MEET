@@ -1,4 +1,5 @@
 import { Container } from '@cloudflare/containers'
+import { env } from 'cloudflare:workers'
 
 /**
  * One Chromium Meet bot per meeting id (`getContainer(env.MEET_BOT_CONTAINER, meetingId)`).
@@ -17,6 +18,9 @@ export class MeetBotContainer extends Container {
     BOT_PROFILE_DIRECTORY: 'Default',
     /** Docker has PulseAudio meet_sink — not browser MediaRecorder. */
     BOT_RECORD_MODE: 'ffmpeg',
+    PULSE_SINK: 'meet_sink',
+    /** Optional; when set, meet-bot requires x-bot-secret on /join and /stop. */
+    BOT_INTERNAL_SECRET: env.BOT_INTERNAL_SECRET ?? '',
   }
 
   override async onActivityExpired(): Promise<void> {

@@ -69,13 +69,16 @@ async function postBotJoin(
     console.log(`[workflow] using host bot ${hostUrl}/join (guest Chrome on machine)`)
     return fetch(`${hostUrl}/join`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-bot-secret': body.callbackSecret,
+      },
       body: JSON.stringify(body),
     })
   }
 
   const container = getContainer(
-    env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
+    env.MEET_BOT_CONTAINER as unknown as DurableObjectNamespace<Container>,
     meetingId,
   )
   console.log(`[workflow] starting container for meeting=${meetingId}`)
@@ -83,23 +86,35 @@ async function postBotJoin(
   return container.fetch(
     new Request('http://container/join', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-bot-secret': body.callbackSecret,
+      },
       body: JSON.stringify(body),
     }),
   )
 }
 
-async function postBotStop(env: Env & { MEET_BOT_URL?: string }, meetingId: string) {
+async function postBotStop(
+  env: Env & { MEET_BOT_URL?: string },
+  meetingId: string,
+) {
+  const secret = env.BOT_INTERNAL_SECRET
+  const headers: Record<string, string> = {}
+  if (secret) headers['x-bot-secret'] = secret
+
   const hostUrl = (env.MEET_BOT_URL || '').replace(/\/$/, '')
   if (hostUrl) {
-    await fetch(`${hostUrl}/stop`, { method: 'POST' })
+    await fetch(`${hostUrl}/stop`, { method: 'POST', headers })
     return
   }
   const container = getContainer(
-    env.MEET_BOT_CONTAINER as DurableObjectNamespace<Container>,
+    env.MEET_BOT_CONTAINER as unknown as DurableObjectNamespace<Container>,
     meetingId,
   )
-  await container.fetch(new Request('http://container/stop', { method: 'POST' }))
+  await container.fetch(
+    new Request('http://container/stop', { method: 'POST', headers }),
+  )
 }
 
 function db(env: Env) {
@@ -228,17 +243,32 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
       const database = db(this.env)
       const now = new Date()
 
-      await database
-        .update(botRun)
-        .set({
-          status: done.status,
-          recordingKey: done.recordingKey,
-          errorMessage: done.errorMessage ?? null,
-          leftAt: now,
-        })
-        .where(eq(botRun.id, prepared.botRunId))
+      const existing = await database.query.botRun.findFirst({
+        where: eq(botRun.id, prepared.botRunId),
+      })
 
-      if (done.status === 'left') {
+      // Do not overwrite a successful left with timeout-failed
+      if (
+        existing?.status === 'left' &&
+        done.status === 'failed' &&
+        done.errorMessage?.includes('Timed out')
+      ) {
+        console.log(
+          `[workflow] finalize skip overwrite — bot_run already left meeting=${meetingId}`,
+        )
+      } else {
+        await database
+          .update(botRun)
+          .set({
+            status: done.status,
+            recordingKey: done.recordingKey ?? existing?.recordingKey ?? null,
+            errorMessage: done.errorMessage ?? null,
+            leftAt: existing?.leftAt ?? now,
+          })
+          .where(eq(botRun.id, prepared.botRunId))
+      }
+
+      if (done.status === 'left' || existing?.status === 'left') {
         await database
           .update(meeting)
           .set({ status: 'completed' })

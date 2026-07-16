@@ -8,6 +8,18 @@
 		"BETTER_AUTH_URL": "https://dac-google-meet.rahulguptax14.workers.dev",
     "BOT_DISPLAY_NAME": "DAC Notetaker",
   },
+  "secrets": {
+    "required": [
+      "BETTER_AUTH_SECRET",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "BOT_INTERNAL_SECRET",
+      "OPENAI_API_KEY",
+      "NEXTCLOUD_URL",
+      "NEXTCLOUD_USER",
+      "NEXTCLOUD_PASSWORD",
+    ],
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -22,7 +34,15 @@
       "binding": "MEETING_BOT_WORKFLOW",
       "class_name": "MeetingBotWorkflow",
     },
+    {
+      "name": "meeting-notes-workflow",
+      "binding": "MEETING_NOTES_WORKFLOW",
+      "class_name": "MeetingNotesWorkflow",
+    },
   ],
+  "triggers": {
+    "crons": ["*/10 * * * *"],
+  },
   "ai": {
     "binding": "AI",
   },

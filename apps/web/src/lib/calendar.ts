@@ -7,6 +7,7 @@ import { botRun, meeting, participant } from '#/db/schema'
 import { getAuth } from '#/lib/auth'
 import {
   getWorkflowStatus,
+  formatWorkflowError,
   scheduleMeetingBot,
 } from '#/lib/schedule-bot'
 
@@ -365,12 +366,7 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
         htmlLink: row.htmlLink,
         workflowInstanceId: row.workflowInstanceId,
         workflowStatus: wf?.status ?? null,
-        workflowError:
-          wf?.error == null
-            ? null
-            : typeof wf.error === 'string'
-              ? wf.error
-              : JSON.stringify(wf.error as unknown),
+        workflowError: formatWorkflowError(wf?.error),
         botWakeAt:
           row.status === 'scheduled'
             ? new Date(wakeMs).toISOString()

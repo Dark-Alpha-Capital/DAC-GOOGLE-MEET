@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 
 import { authClient } from '#/lib/auth-client'
 import {
@@ -72,7 +72,13 @@ function MeetingRow({ item }: { item: MeetingWithParticipants }) {
   return (
     <li className="py-4">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-        <span className="font-medium text-[var(--sea-ink)]">{item.title}</span>
+        <Link
+          to="/meeting/$meetingId"
+          params={{ meetingId: item.id }}
+          className="font-medium text-[var(--sea-ink)] hover:underline"
+        >
+          {item.title}
+        </Link>
         <span className="text-sm text-[var(--sea-ink-soft)]">
           {formatWhen(item.startsAt)}
         </span>
@@ -97,24 +103,24 @@ function MeetingRow({ item }: { item: MeetingWithParticipants }) {
           meeting={item.status}
           {run.joinedAt ? ` · joined ${formatWhen(run.joinedAt)}` : ''}
           {run.leftAt ? ` · left ${formatWhen(run.leftAt)}` : ''}
-          {run.recordingKey ? ` · audio ${run.recordingKey}` : ''}
-          {run.transcriptKey ? ` · transcript ${run.transcriptKey}` : ''}
+          {run.recordingKey ? ` · audio saved` : ''}
+          {run.transcriptText ? ` · transcript ready` : ''}
         </p>
-      ) : null}
-      {run?.transcriptText ? (
-        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-black/5 p-3 text-xs text-[var(--sea-ink)]">
-          {run.transcriptText}
-        </pre>
       ) : null}
 
       <p className="mt-1 font-mono text-xs text-[var(--sea-ink-soft)]">
         workflow: {item.workflowStatus ?? 'none'}
-        {item.workflowInstanceId
-          ? ` · id=${item.workflowInstanceId.slice(0, 8)}…`
-          : ''}
         {item.botWakeAt ? ` · bot wakes ${formatWhen(item.botWakeAt)}` : ''}
         {item.workflowError ? ` · error=${item.workflowError}` : ''}
       </p>
+
+      <Link
+        to="/meeting/$meetingId"
+        params={{ meetingId: item.id }}
+        className="mt-2 inline-block text-xs font-semibold text-[var(--lagoon-deep)]"
+      >
+        Open meeting →
+      </Link>
 
       {item.participants.length > 0 ? (
         <ul className="mt-2 space-y-1 text-sm text-[var(--sea-ink-soft)]">

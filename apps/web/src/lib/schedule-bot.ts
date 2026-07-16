@@ -167,7 +167,21 @@ export async function scheduleMeetingBot(input: {
 }
 
 /** Live Workflow instance status for UI / debugging. */
-export async function getWorkflowStatus(instanceId: string | null | undefined) {
+export type WorkflowUiStatus = {
+  id: string
+  status: string
+  error: unknown
+}
+
+export function formatWorkflowError(error: unknown): string | null {
+  if (error == null) return null
+  if (typeof error === 'string') return error
+  return JSON.stringify(error)
+}
+
+export async function getWorkflowStatus(
+  instanceId: string | null | undefined,
+): Promise<WorkflowUiStatus | null> {
   if (!instanceId) return null
   try {
     const instance = await env.MEETING_BOT_WORKFLOW.get(instanceId)

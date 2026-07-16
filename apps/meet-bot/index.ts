@@ -3,6 +3,7 @@ import { AudioRecorder } from './src/recorder.ts'
 import type { BotStatus, JoinPayload } from './src/types.ts'
 
 const PORT = Number(process.env.PORT || 8080)
+const BOT_SECRET = process.env.BOT_INTERNAL_SECRET || ''
 
 function log(...args: unknown[]) {
   console.log(`[meet-bot ${new Date().toISOString()}]`, ...args)
@@ -10,6 +11,13 @@ function log(...args: unknown[]) {
 
 function logError(...args: unknown[]) {
   console.error(`[meet-bot ${new Date().toISOString()}]`, ...args)
+}
+
+function assertBotAuth(req: Request): Response | null {
+  if (!BOT_SECRET) return null
+  const secret = req.headers.get('x-bot-secret')
+  if (secret === BOT_SECRET) return null
+  return Response.json({ error: 'Unauthorized' }, { status: 401 })
 }
 
 let status: BotStatus = {
@@ -25,6 +33,8 @@ let session: MeetGuestSession | null = null
 let recorder: AudioRecorder | null = null
 let running = false
 let stopRequested = false
+/** True while leave → stop recorder → upload is in progress (ignore destructive /stop). */
+let finalizing = false
 
 async function reportStatus(
   payload: JoinPayload,
@@ -53,11 +63,39 @@ async function reportStatus(
   }
 }
 
+async function finishAndUpload(
+  payload: JoinPayload,
+  outcome: 'left' | 'failed',
+  errorMessage?: string,
+) {
+  finalizing = true
+  try {
+    try {
+      await session?.leave()
+    } catch {
+      // ignore
+    }
+    await recorder?.stop()
+    if (outcome === 'left') {
+      const hadAudio = await recorder?.hasAudioFile()
+      if (!hadAudio) {
+        throw new Error(
+          'Meeting ended but recording file is missing or empty — refusing success',
+        )
+      }
+    }
+    await recorder?.upload(payload, outcome, errorMessage)
+  } finally {
+    finalizing = false
+  }
+}
+
 async function runBot(payload: JoinPayload) {
   if (running) throw new Error('Bot already running')
 
   running = true
   stopRequested = false
+  finalizing = false
   activePayload = payload
   status = {
     state: 'joining',
@@ -107,13 +145,15 @@ async function runBot(payload: JoinPayload) {
     await recorder.start(session.getPage())
     status.state = 'recording'
 
-    await session.waitUntilMeetingEnds(payload.endsAtMs, () => stopRequested)
+    const leaveReason = await session.waitUntilMeetingEnds(
+      payload.endsAtMs,
+      () => stopRequested,
+    )
+    log(`meeting end detected reason=${leaveReason}`)
 
     status.state = 'leaving'
     log('leaving meeting / uploading recording')
-    await session.leave()
-    await recorder.stop()
-    await recorder.upload(payload, 'left')
+    await finishAndUpload(payload, 'left')
     status.state = 'done'
     log('runBot done')
   } catch (error) {
@@ -126,8 +166,7 @@ async function runBot(payload: JoinPayload) {
     await reportStatus(payload, 'failed', message)
 
     try {
-      await recorder?.stop()
-      await recorder?.upload(payload, 'failed', message)
+      await finishAndUpload(payload, 'failed', message)
     } catch (uploadError) {
       logError('Failed to upload failure recording', uploadError)
       try {
@@ -152,6 +191,7 @@ async function runBot(payload: JoinPayload) {
     session = null
     recorder = null
     running = false
+    finalizing = false
     log('runBot cleanup finished, state=', status.state)
   }
 }
@@ -171,28 +211,27 @@ const server = Bun.serve({
     }
 
     if (req.method === 'POST' && url.pathname === '/join') {
+      const unauthorized = assertBotAuth(req)
+      if (unauthorized) return unauthorized
+
       const payload = (await req.json()) as JoinPayload
       if (!payload.meetLink || !payload.botRunId || !payload.callbackBaseUrl) {
         logError('invalid join payload', payload)
         return Response.json({ error: 'Invalid join payload' }, { status: 400 })
       }
-      if (running) {
-        log('join while busy — stopping previous session first')
+      if (running || finalizing) {
+        log('join while busy — requesting stop of previous session')
         stopRequested = true
-        try {
-          await session?.leave()
-        } catch {
-          // ignore
+        const deadline = Date.now() + 60_000
+        while ((running || finalizing) && Date.now() < deadline) {
+          await Bun.sleep(500)
         }
-        try {
-          await session?.close()
-        } catch {
-          // ignore
+        if (running || finalizing) {
+          return Response.json(
+            { error: 'Previous bot session still running' },
+            { status: 409 },
+          )
         }
-        session = null
-        recorder = null
-        running = false
-        stopRequested = false
       }
       void runBot(payload).catch((error) => {
         logError('unhandled runBot rejection', error)
@@ -201,8 +240,22 @@ const server = Bun.serve({
     }
 
     if (req.method === 'POST' && url.pathname === '/stop') {
+      const unauthorized = assertBotAuth(req)
+      if (unauthorized) return unauthorized
+
       log('stop requested')
       stopRequested = true
+
+      // While finalizing upload, do not tear down the browser mid-flight.
+      if (finalizing || status.state === 'leaving' || status.state === 'recording') {
+        log('stop: signaling runBot to leave; waiting for upload (no force-close)')
+        return Response.json({
+          stopped: true,
+          soft: true,
+          meetingId: activePayload?.meetingId ?? null,
+        })
+      }
+
       try {
         await session?.leave()
       } catch {

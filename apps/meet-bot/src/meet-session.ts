@@ -136,7 +136,7 @@ async function fillGuestName(page: Page, displayName: string) {
         (await page.$('input[placeholder*="name" i]')) ||
         (await page.$('input[type="text"]'))
       if (handle) {
-        await handle.click({ clickCount: 3 })
+        await handle.click({ count: 3 })
         await handle.type(displayName, { delay: 15 })
       }
       log(`filled guest name: ${displayName}`)
@@ -760,28 +760,30 @@ export class MeetGuestSession {
     return 'waiting'
   }
 
+  /**
+   * Poll until the call should end. Alone timer only runs while in-call toolbar
+   * is visible (avoids false positives on lobby / post-call screens).
+   */
   async waitUntilMeetingEnds(
     endsAtMs: number,
     shouldStop?: () => boolean,
-  ) {
+  ): Promise<'alone' | 'calendar_end' | 'ended_ui' | 'stop' | 'dropped'> {
     if (!this.page) throw new Error('Session not started')
 
-    // Host left / alone → leave quickly (Otter-style)
     const aloneLimitMs = 20_000
     let aloneSince: number | null = null
     let tick = 0
 
     while (Date.now() < endsAtMs + 60_000) {
       if (shouldStop?.()) {
-        log('stop requested during meeting')
-        return
+        log('leave reason=stop')
+        return 'stop'
       }
       if (await meetingEndedUi(this.page)) {
-        log('meeting ended UI detected')
-        return
+        log('leave reason=ended_ui')
+        return 'ended_ui'
       }
 
-      // Periodically open People so we can see contributor count / Meeting host
       if (tick % 3 === 0) {
         await refreshPeoplePanel(this.page)
         await Bun.sleep(500)
@@ -790,10 +792,11 @@ export class MeetGuestSession {
 
       const inCall = await isInMeeting(this.page)
       if (!inCall && !(await isWaitingForHost(this.page))) {
-        log('no longer in call/lobby — treating as meeting end')
-        return
+        log('leave reason=dropped')
+        return 'dropped'
       }
 
+      // Alone / host-left only while clearly in the live call
       if (inCall && (await isAloneInMeeting(this.page))) {
         if (aloneSince == null) aloneSince = Date.now()
         const aloneFor = Date.now() - aloneSince
@@ -801,20 +804,23 @@ export class MeetGuestSession {
           `host gone / alone in meeting for ${Math.round(aloneFor / 1000)}s — will leave at ${aloneLimitMs / 1000}s`,
         )
         if (aloneFor >= aloneLimitMs) {
-          log('alone/host-left timeout — leaving')
-          return
+          log('leave reason=alone')
+          return 'alone'
         }
       } else {
         aloneSince = null
       }
 
       if (Date.now() >= endsAtMs) {
-        log('calendar end time reached — leaving')
-        return
+        log('leave reason=calendar_end')
+        return 'calendar_end'
       }
 
       await Bun.sleep(5000)
     }
+
+    log('leave reason=calendar_end (outer timeout)')
+    return 'calendar_end'
   }
 
   getPage() {

@@ -25,5 +25,9 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "@esbuild/darwin-arm64": "0.28.1",
+    "esbuild": "0.28.1"
+  }
 }
