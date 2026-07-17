@@ -7,7 +7,7 @@ import { meeting } from '#/db/schema'
 import { getAuth } from '#/lib/auth'
 import { scheduleMeetingBot } from '#/lib/schedule-bot'
 
-/** User-triggered: send the notetaker bot to this meeting. */
+/** User-triggered: schedule the notetaker workflow for this meeting. */
 export const requestBotForMeeting = createServerFn({ method: 'POST' })
   .validator((data: unknown) => {
     const meetingId =
@@ -60,10 +60,20 @@ export const requestBotForMeeting = createServerFn({ method: 'POST' })
           startsAt: row.startsAt,
           endsAt: row.endsAt,
           status: row.status,
-          previousStartsAtMs: row.startsAt.getTime(),
-          previousMeetLink: row.meetLink,
+          // Only treat as "previous schedule" when a workflow was already stored.
+          previousStartsAtMs: row.workflowInstanceId
+            ? row.startsAt.getTime()
+            : undefined,
+          previousMeetLink: row.workflowInstanceId ? row.meetLink : undefined,
           previousWorkflowInstanceId: row.workflowInstanceId,
         })
+
+        if (!workflowInstanceId) {
+          return {
+            ok: false,
+            error: 'Could not schedule bot for this meeting',
+          }
+        }
 
         await getDb()
           .update(meeting)

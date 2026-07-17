@@ -171,58 +171,97 @@ function formatWhen(value: Date | string | null | undefined) {
   })
 }
 
-function botStatusLabel(run: MeetingWithParticipants['latestBotRun']) {
-  if (!run) return 'bot: not started'
-  switch (run.status) {
-    case 'pending':
-      return 'bot: pending'
-    case 'joining':
-      return 'bot: joining…'
-    case 'waiting_admission':
-      return 'bot: waiting to be admitted'
-    case 'joined':
-      return 'bot: in call / recording'
-    case 'left':
-      return run.transcriptKey || run.transcriptText
-        ? 'bot: completed · transcript ready'
-        : run.recordingKey
-          ? 'bot: completed · audio saved'
-          : 'bot: completed · no audio'
-    case 'failed':
-      return `bot: failed${run.errorMessage ? ` · ${run.errorMessage}` : ''}`
-    default:
-      return `bot: ${run.status}`
-  }
+const ACTIVE_WORKFLOW = new Set([
+  'queued',
+  'running',
+  'waiting',
+  'paused',
+])
+
+function isBotScheduled(item: MeetingWithParticipants) {
+  if (!item.workflowInstanceId) return false
+  if (!item.workflowStatus || item.workflowStatus === 'missing') return false
+  return ACTIVE_WORKFLOW.has(item.workflowStatus)
 }
 
-function canRequestBot(item: MeetingWithParticipants) {
+function scheduleBadge(item: MeetingWithParticipants) {
+  const run = item.latestBotRun
+  if (run?.status === 'joined' || run?.status === 'joining') {
+    return { label: 'Bot in call', tone: 'active' as const }
+  }
+  if (run?.status === 'waiting_admission') {
+    return { label: 'Waiting admission', tone: 'active' as const }
+  }
+  if (run?.status === 'left') {
+    return {
+      label:
+        run.transcriptKey || run.transcriptText
+          ? 'Completed · transcript ready'
+          : run.recordingKey
+            ? 'Completed · audio saved'
+            : 'Completed',
+      tone: 'done' as const,
+    }
+  }
+  if (run?.status === 'failed' || item.workflowStatus === 'errored') {
+    return {
+      label: `Failed${run?.errorMessage ? ` · ${run.errorMessage}` : ''}`,
+      tone: 'failed' as const,
+    }
+  }
+  if (isBotScheduled(item)) {
+    const wake =
+      item.botWakeAt && !Number.isNaN(new Date(item.botWakeAt).getTime())
+        ? formatWhen(item.botWakeAt)
+        : null
+    return {
+      label: wake ? `Scheduled · joins ~${wake}` : 'Scheduled',
+      tone: 'scheduled' as const,
+    }
+  }
+  return { label: 'Not scheduled', tone: 'idle' as const }
+}
+
+/** Manual schedule is allowed when the meeting can still get a bot workflow. */
+function canScheduleBot(item: MeetingWithParticipants) {
   if (!item.meetLink) return false
   if (item.status !== 'scheduled') return false
+  if (isBotScheduled(item)) return false
   const run = item.latestBotRun
-  if (!run) return true
-  if (run.status === 'left' || run.status === 'failed') return true
   if (
-    run.status === 'pending' ||
-    run.status === 'joining' ||
-    run.status === 'waiting_admission' ||
-    run.status === 'joined'
+    run?.status === 'joining' ||
+    run?.status === 'waiting_admission' ||
+    run?.status === 'joined'
   ) {
     return false
   }
+  // Successful completion — no re-schedule from the list.
+  if (run?.status === 'left') return false
   return true
 }
 
 function MeetingRow({
   item,
-  onRequestBot,
-  requesting,
+  onScheduleBot,
+  scheduling,
 }: {
   item: MeetingWithParticipants
-  onRequestBot: (meetingId: string) => void
-  requesting: boolean
+  onScheduleBot: (meetingId: string) => void
+  scheduling: boolean
 }) {
-  const run = item.latestBotRun
-  const showSend = canRequestBot(item)
+  const badge = scheduleBadge(item)
+  const showSchedule = canScheduleBot(item)
+
+  const badgeClass =
+    badge.tone === 'scheduled'
+      ? 'bg-[var(--lagoon-deep)]/15 text-[var(--lagoon-deep)]'
+      : badge.tone === 'active'
+        ? 'bg-[var(--lagoon-deep)] text-white'
+        : badge.tone === 'failed'
+          ? 'bg-red-100 text-red-700'
+          : badge.tone === 'done'
+            ? 'bg-black/10 text-[var(--sea-ink)]'
+            : 'bg-black/5 text-[var(--sea-ink-soft)]'
 
   return (
     <li className="py-4">
@@ -250,20 +289,26 @@ function MeetingRow({
         </a>
       ) : null}
 
-      <p className="mt-2 text-sm font-medium text-[var(--sea-ink)]">
-        {botStatusLabel(run)}
-        {item.workflowStatus ? ` · workflow ${item.workflowStatus}` : ''}
-      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass}`}
+        >
+          {badge.label}
+        </span>
+        {item.workflowError ? (
+          <span className="text-xs text-red-600">{item.workflowError}</span>
+        ) : null}
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        {showSend ? (
+        {showSchedule ? (
           <button
             type="button"
-            disabled={requesting}
-            onClick={() => onRequestBot(item.id)}
+            disabled={scheduling}
+            onClick={() => onScheduleBot(item.id)}
             className="rounded-full bg-[var(--lagoon-deep)] px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           >
-            {requesting ? 'Sending…' : 'Send bot'}
+            {scheduling ? 'Scheduling…' : 'Schedule bot'}
           </button>
         ) : null}
         <Link
@@ -298,7 +343,7 @@ function HomePage() {
   const { session } = Route.useRouteContext()
   const { meetings, recent, error, synced, removed } = Route.useLoaderData()
   const [dayOffset, setDayOffset] = useState(0)
-  const [requestingId, setRequestingId] = useState<string | null>(null)
+  const [schedulingId, setSchedulingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const selectedDay = useMemo(
@@ -311,20 +356,20 @@ function HomePage() {
     [meetings, selectedDay],
   )
 
-  async function handleRequestBot(meetingId: string) {
+  async function handleScheduleBot(meetingId: string) {
     setActionError(null)
-    setRequestingId(meetingId)
+    setSchedulingId(meetingId)
     try {
       const result = await requestBotForMeeting({ data: { meetingId } })
       if (!result.ok) {
-        setActionError(result.error ?? 'Failed to send bot')
+        setActionError(result.error ?? 'Failed to schedule bot')
         return
       }
       await router.invalidate()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
-      setRequestingId(null)
+      setSchedulingId(null)
     }
   }
 
@@ -377,7 +422,7 @@ function HomePage() {
                 year: 'numeric',
               })}
               {' · '}
-              Send the bot manually when you want notes for a meeting.
+              Schedule the bot manually for meetings you want notes for.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -421,8 +466,8 @@ function HomePage() {
               <MeetingRow
                 key={item.id}
                 item={item}
-                requesting={requestingId === item.id}
-                onRequestBot={handleRequestBot}
+                scheduling={schedulingId === item.id}
+                onScheduleBot={handleScheduleBot}
               />
             ))}
           </ul>
@@ -446,8 +491,8 @@ function HomePage() {
               <MeetingRow
                 key={item.id}
                 item={item}
-                requesting={false}
-                onRequestBot={handleRequestBot}
+                scheduling={false}
+                onScheduleBot={handleScheduleBot}
               />
             ))}
           </ul>
