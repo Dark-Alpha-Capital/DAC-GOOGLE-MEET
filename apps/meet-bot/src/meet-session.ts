@@ -496,13 +496,16 @@ async function refreshPeoplePanel(page: Page) {
 export type ObservedAttendee = {
   name: string
   email?: string | null
+  firstSeenAt: number
+  lastSeenAt: number
+  leftDuringCall?: boolean
 }
 
 /**
  * Scrape visible participant names from Meet's People panel / tiles.
  * Emails are often unavailable in the guest UI — capture when present.
  */
-async function scrapeAttendees(page: Page): Promise<ObservedAttendee[]> {
+async function scrapeAttendees(page: Page): Promise<Array<{ name: string; email?: string | null }>> {
   return page.evaluate(() => {
     const results: Array<{ name: string; email?: string | null }> = []
     const seen = new Set<string>()
@@ -563,8 +566,41 @@ export class MeetGuestSession {
   private page: Page | null = null
   /** When true, we attached to a user-started Chrome — do not quit it on close(). */
   private attachedOnly = false
-  /** Cumulative attendees observed during the call (names / emails when available). */
+  /** Cumulative attendees observed during the call (with first/last seen). */
   private attendees = new Map<string, ObservedAttendee>()
+  /** People missing from the last scrape for this many ms are marked leftDuringCall. */
+  private static readonly LEFT_GRACE_MS = 45_000
+
+  private mergeAttendeeBatch(
+    batch: Array<{ name: string; email?: string | null }>,
+    now = Date.now(),
+  ) {
+    const seenKeys = new Set<string>()
+    for (const person of batch) {
+      const key = `${person.name.toLowerCase()}|${(person.email || '').toLowerCase()}`
+      seenKeys.add(key)
+      const existing = this.attendees.get(key)
+      if (existing) {
+        existing.lastSeenAt = now
+        existing.leftDuringCall = false
+        if (person.email && !existing.email) existing.email = person.email
+      } else {
+        this.attendees.set(key, {
+          name: person.name,
+          email: person.email || null,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          leftDuringCall: false,
+        })
+      }
+    }
+    for (const [key, person] of this.attendees) {
+      if (seenKeys.has(key)) continue
+      if (now - person.lastSeenAt >= MeetGuestSession.LEFT_GRACE_MS) {
+        person.leftDuringCall = true
+      }
+    }
+  }
 
   async start(payload: JoinPayload) {
     const cdpUrl = (process.env.BOT_CDP_URL || '').replace(/\/$/, '')
@@ -828,8 +864,8 @@ export class MeetGuestSession {
   }
 
   /**
-   * Poll until the call should end. Alone timer only runs while in-call toolbar
-   * is visible (avoids false positives on lobby / post-call screens).
+   * Poll until the call should end. Prefer real end signals (UI / alone / stop).
+   * Calendar end is a soft hint — overtime meetings keep running until hard max.
    */
   async waitUntilMeetingEnds(
     endsAtMs: number,
@@ -838,10 +874,14 @@ export class MeetGuestSession {
     if (!this.page) throw new Error('Session not started')
 
     const aloneLimitMs = 20_000
+    // Allow overtime past calendar end; hard stop after +3h from calendar end
+    // (or +4h from now if calendar already ended when we joined).
+    const hardStopAt = Math.max(endsAtMs + 3 * 60 * 60 * 1000, Date.now() + 4 * 60 * 60 * 1000)
     let aloneSince: number | null = null
     let tick = 0
+    let calendarEndLogged = false
 
-    while (Date.now() < endsAtMs + 60_000) {
+    while (Date.now() < hardStopAt) {
       if (shouldStop?.()) {
         log('leave reason=stop')
         return 'stop'
@@ -851,15 +891,13 @@ export class MeetGuestSession {
         return 'ended_ui'
       }
 
-      if (tick % 3 === 0) {
+      if (tick % 2 === 0) {
         await refreshPeoplePanel(this.page)
         await Bun.sleep(500)
         try {
           const batch = await scrapeAttendees(this.page)
-          for (const person of batch) {
-            const key = `${person.name.toLowerCase()}|${(person.email || '').toLowerCase()}`
-            this.attendees.set(key, person)
-          }
+          this.mergeAttendeeBatch(batch)
+          log(`attendance scrape: ${batch.length} visible, ${this.attendees.size} unique total`)
         } catch {
           // ignore scrape failures
         }
@@ -888,14 +926,18 @@ export class MeetGuestSession {
       }
 
       if (Date.now() >= endsAtMs) {
-        log('leave reason=calendar_end')
-        return 'calendar_end'
+        if (!calendarEndLogged) {
+          log(
+            'calendar end reached — staying until alone/ended_ui/stop/hard-max (overtime)',
+          )
+          calendarEndLogged = true
+        }
       }
 
       await Bun.sleep(5000)
     }
 
-    log('leave reason=calendar_end (outer timeout)')
+    log('leave reason=calendar_end (hard max)')
     return 'calendar_end'
   }
 
@@ -903,22 +945,33 @@ export class MeetGuestSession {
     return this.page
   }
 
-  /** Final scrape + return all attendees seen during the call. */
-  async collectAttendees(): Promise<ObservedAttendee[]> {
+  /** Final scrape + return all attendees seen during the call (with presence). */
+  async collectAttendees(): Promise<
+    Array<{
+      name: string
+      email?: string | null
+      firstSeenAt: string
+      lastSeenAt: string
+      leftDuringCall: boolean
+    }>
+  > {
     if (this.page) {
       try {
         await refreshPeoplePanel(this.page)
         await Bun.sleep(400)
         const batch = await scrapeAttendees(this.page)
-        for (const person of batch) {
-          const key = `${person.name.toLowerCase()}|${(person.email || '').toLowerCase()}`
-          this.attendees.set(key, person)
-        }
+        this.mergeAttendeeBatch(batch)
       } catch {
         // ignore
       }
     }
-    const list = Array.from(this.attendees.values())
+    const list = Array.from(this.attendees.values()).map((person) => ({
+      name: person.name,
+      email: person.email ?? null,
+      firstSeenAt: new Date(person.firstSeenAt).toISOString(),
+      lastSeenAt: new Date(person.lastSeenAt).toISOString(),
+      leftDuringCall: Boolean(person.leftDuringCall),
+    }))
     log(`collected ${list.length} attendees`)
     return list
   }

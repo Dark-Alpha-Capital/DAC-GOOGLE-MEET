@@ -1,6 +1,12 @@
 export type MeetingAttendee = {
   name: string
   email?: string | null
+  /** ISO timestamp when first seen in the call */
+  firstSeenAt?: string | null
+  /** ISO timestamp when last seen in the call */
+  lastSeenAt?: string | null
+  /** true if they disappeared before the bot left */
+  leftDuringCall?: boolean
 }
 
 export type AttendancePayload = {
@@ -10,6 +16,9 @@ export type AttendancePayload = {
   meetLink: string | null
   startedAt: string | null
   endedAt: string
+  durationMs?: number | null
+  leaveReason?: string | null
+  uniqueAttendeeCount?: number
   attendees: MeetingAttendee[]
 }
 
@@ -64,12 +73,21 @@ export function parseAttendeesJson(raw: string | null | undefined): MeetingAtten
     const out: MeetingAttendee[] = []
     for (const item of parsed) {
       if (!item || typeof item !== 'object') continue
-      const row = item as { name?: unknown; email?: unknown }
+      const row = item as {
+        name?: unknown
+        email?: unknown
+        firstSeenAt?: unknown
+        lastSeenAt?: unknown
+        leftDuringCall?: unknown
+      }
       const name = typeof row.name === 'string' ? row.name.trim() : ''
       if (!name) continue
       out.push({
         name,
         email: typeof row.email === 'string' ? row.email : null,
+        firstSeenAt: typeof row.firstSeenAt === 'string' ? row.firstSeenAt : null,
+        lastSeenAt: typeof row.lastSeenAt === 'string' ? row.lastSeenAt : null,
+        leftDuringCall: row.leftDuringCall === true,
       })
     }
     return out

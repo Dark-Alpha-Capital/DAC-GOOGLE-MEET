@@ -64,6 +64,17 @@ function botTimeline(status: string | undefined) {
   }))
 }
 
+function formatDuration(ms: number | null | undefined) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
+  const totalSec = Math.round(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 function MeetingDetailPage() {
   const { meeting, error } = Route.useLoaderData()
 
@@ -96,7 +107,7 @@ function MeetingDetailPage() {
           {meeting.title}
         </h1>
         <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-          {formatWhen(meeting.startsAt)} – {formatWhen(meeting.endsAt)}
+          Calendar: {formatWhen(meeting.startsAt)} – {formatWhen(meeting.endsAt)}
         </p>
         {meeting.meetLink ? (
           <a
@@ -124,15 +135,54 @@ function MeetingDetailPage() {
 
       <section className="island-shell mt-8 rounded-2xl px-5 py-5 sm:px-8">
         <h2 className="text-sm font-semibold text-[var(--sea-ink)]">
-          Bot status
+          Call overview
         </h2>
         {!run ? (
           <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
             Bot has not started for this meeting yet.
           </p>
         ) : (
+          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-[var(--sea-ink-soft)]">Bot joined</dt>
+              <dd className="font-medium text-[var(--sea-ink)]">
+                {formatWhen(run.joinedAt)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--sea-ink-soft)]">Bot left / ended</dt>
+              <dd className="font-medium text-[var(--sea-ink)]">
+                {formatWhen(run.leftAt)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--sea-ink-soft)]">Duration</dt>
+              <dd className="font-medium text-[var(--sea-ink)]">
+                {formatDuration(run.durationMs)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--sea-ink-soft)]">People observed</dt>
+              <dd className="font-medium text-[var(--sea-ink)]">
+                {run.uniqueAttendeeCount ?? run.attendees.length}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--sea-ink-soft)]">Leave reason</dt>
+              <dd className="font-medium text-[var(--sea-ink)]">
+                {run.leaveReason?.replace(/_/g, ' ') ?? '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--sea-ink-soft)]">Bot status</dt>
+              <dd className="font-medium text-[var(--sea-ink)]">{run.status}</dd>
+            </div>
+          </dl>
+        )}
+
+        {run ? (
           <>
-            <ol className="mt-3 flex flex-wrap gap-2">
+            <ol className="mt-4 flex flex-wrap gap-2">
               {timeline.map((step) => (
                 <li
                   key={step.id}
@@ -149,22 +199,25 @@ function MeetingDetailPage() {
               ))}
             </ol>
             <p className="mt-3 font-mono text-xs text-[var(--sea-ink-soft)]">
-              {run.joinedAt ? `joined ${formatWhen(run.joinedAt)}` : 'not joined'}
-              {run.leftAt ? ` · left ${formatWhen(run.leftAt)}` : ''}
-              {run.recordingKey ? ` · audio ${run.recordingKey}` : ''}
+              {run.recordingKey ? `audio ${run.recordingKey}` : 'no audio key'}
             </p>
           </>
-        )}
+        ) : null}
 
         {meeting.participants.length > 0 ? (
-          <ul className="mt-4 space-y-1 text-sm text-[var(--sea-ink-soft)]">
-            {meeting.participants.map((p) => (
-              <li key={p.email}>
-                {p.displayName ?? p.email}
-                {p.responseStatus ? ` · ${p.responseStatus}` : ''}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-4">
+            <h3 className="text-xs font-semibold text-[var(--sea-ink-soft)]">
+              Calendar invitees
+            </h3>
+            <ul className="mt-2 space-y-1 text-sm text-[var(--sea-ink-soft)]">
+              {meeting.participants.map((p) => (
+                <li key={p.email}>
+                  {p.displayName ?? p.email}
+                  {p.responseStatus ? ` · ${p.responseStatus}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </section>
 
@@ -266,22 +319,35 @@ function MeetingDetailPage() {
                 No live attendees captured yet
                 {run.status === 'left'
                   ? ' (Meet UI may hide names from the bot).'
-                  : ' — available after the bot leaves.'}
+                  : ' — polled throughout the call; available after the bot leaves.'}
               </p>
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-[var(--sea-ink-soft)]">
-                  Sync:{' '}
-                  {run.attendanceSyncStatus ?? '—'}
+                  Everyone observed during the call ({run.attendees.length}).
+                  Sync: {run.attendanceSyncStatus ?? '—'}
                   {run.attendanceSyncError
                     ? ` · ${run.attendanceSyncError}`
                     : ''}
                 </p>
-                <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--sea-ink)]">
+                <ul className="divide-y divide-[var(--line)] text-sm text-[var(--sea-ink)]">
                   {run.attendees.map((person, i) => (
-                    <li key={`${person.name}-${i}`}>
-                      {person.name}
-                      {person.email ? ` · ${person.email}` : ''}
+                    <li key={`${person.name}-${i}`} className="py-2">
+                      <div className="font-medium">
+                        {person.name}
+                        {person.email ? ` · ${person.email}` : ''}
+                        {person.leftDuringCall ? (
+                          <span className="ml-2 text-xs font-normal text-[var(--sea-ink-soft)]">
+                            left mid-call
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-0.5 text-xs text-[var(--sea-ink-soft)]">
+                        first seen {formatWhen(person.firstSeenAt)}
+                        {person.lastSeenAt
+                          ? ` · last seen ${formatWhen(person.lastSeenAt)}`
+                          : ''}
+                      </div>
                     </li>
                   ))}
                 </ul>

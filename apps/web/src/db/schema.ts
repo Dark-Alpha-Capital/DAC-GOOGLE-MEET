@@ -157,8 +157,14 @@ export const botRun = sqliteTable('bot_run', {
   transcriptKey: text('transcript_key'),
   /** Plain-text transcript for LLM / UI */
   transcriptText: text('transcript_text'),
-  /** JSON array of { name, email? } observed in the live Meet call */
+  /** JSON array of presence records from the live Meet call */
   attendeesJson: text('attendees_json'),
+  /** Unique people observed during the call */
+  uniqueAttendeeCount: integer('unique_attendee_count'),
+  /** Milliseconds between bot join and leave (actual call duration observed) */
+  durationMs: integer('duration_ms'),
+  /** alone | calendar_end | ended_ui | stop | dropped | failed */
+  leaveReason: text('leave_reason'),
   /** pending | simulated | sent | failed | skipped */
   attendanceSyncStatus: text('attendance_sync_status'),
   attendanceSyncError: text('attendance_sync_error'),

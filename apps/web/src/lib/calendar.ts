@@ -194,8 +194,10 @@ export const syncMeetingsFromCalendar = createServerFn({
     const status =
       event.status === 'cancelled'
         ? 'cancelled'
-        : // Keep bot-completed meetings completed even if Calendar end is still in the future
-          existing?.status === 'completed' || endsAt.getTime() < Date.now()
+        : // Keep bot-completed meetings completed even if Calendar end is still in the future.
+          // Give a 4h overtime window before calendar-only meetings become completed.
+          existing?.status === 'completed' ||
+            endsAt.getTime() + 4 * 60 * 60 * 1000 < Date.now()
           ? 'completed'
           : 'scheduled'
 

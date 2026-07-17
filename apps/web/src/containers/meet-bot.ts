@@ -7,7 +7,7 @@ import { env } from 'cloudflare:workers'
  */
 export class MeetBotContainer extends Container {
   defaultPort = 8080
-  sleepAfter = '3h'
+  sleepAfter = '15m'
   enableInternet = true
   pingEndpoint = '/health'
   envVars = {
@@ -24,7 +24,27 @@ export class MeetBotContainer extends Container {
   }
 
   override async onActivityExpired(): Promise<void> {
-    // Do not stop — Meet sessions outlive idle HTTP gaps. Finalize step stops explicitly.
-    this.renewActivityTimeout()
+    // Stop idle/finished bots so instances don't live forever.
+    // Renew only while an active join/recording session is in progress.
+    try {
+      const response = await this.containerFetch(
+        new Request('http://container/status'),
+      )
+      const body = (await response.json()) as { state?: string }
+      const state = body.state ?? 'idle'
+      if (
+        state === 'joining' ||
+        state === 'waiting_admission' ||
+        state === 'joined' ||
+        state === 'recording' ||
+        state === 'leaving'
+      ) {
+        this.renewActivityTimeout()
+        return
+      }
+    } catch {
+      // If status is unreachable, shut down.
+    }
+    await this.stop()
   }
 }

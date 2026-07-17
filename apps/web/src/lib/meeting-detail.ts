@@ -35,6 +35,9 @@ export type MeetingDetail = {
     status: string
     joinedAt: Date | null
     leftAt: Date | null
+    durationMs: number | null
+    leaveReason: string | null
+    uniqueAttendeeCount: number | null
     recordingKey: string | null
     transcriptKey: string | null
     transcriptText: string | null
@@ -141,6 +144,9 @@ export const getMeetingDetail = createServerFn({ method: 'GET' })
               status: latest.status,
               joinedAt: latest.joinedAt,
               leftAt: latest.leftAt,
+              durationMs: latest.durationMs ?? null,
+              leaveReason: latest.leaveReason ?? null,
+              uniqueAttendeeCount: latest.uniqueAttendeeCount ?? null,
               recordingKey: latest.recordingKey,
               transcriptKey: latest.transcriptKey,
               transcriptText: latest.transcriptText,

@@ -204,7 +204,18 @@ export class AudioRecorder {
     payload: JoinPayload,
     status: 'left' | 'failed',
     errorMessage?: string,
-    attendees?: Array<{ name: string; email?: string | null }>,
+    attendees?: Array<{
+      name: string
+      email?: string | null
+      firstSeenAt?: string
+      lastSeenAt?: string
+      leftDuringCall?: boolean
+    }>,
+    overview?: {
+      leaveReason?: string
+      durationMs?: number
+      uniqueAttendeeCount?: number
+    },
   ) {
     const form = new FormData()
     form.set('botRunId', payload.botRunId)
@@ -214,6 +225,13 @@ export class AudioRecorder {
     if (errorMessage) form.set('errorMessage', errorMessage)
     if (attendees && attendees.length > 0) {
       form.set('attendees', JSON.stringify(attendees))
+    }
+    if (overview?.leaveReason) form.set('leaveReason', overview.leaveReason)
+    if (overview?.durationMs != null) {
+      form.set('durationMs', String(overview.durationMs))
+    }
+    if (overview?.uniqueAttendeeCount != null) {
+      form.set('uniqueAttendeeCount', String(overview.uniqueAttendeeCount))
     }
 
     let hadFile = false

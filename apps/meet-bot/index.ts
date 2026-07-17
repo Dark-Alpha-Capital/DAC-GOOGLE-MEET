@@ -67,10 +67,17 @@ async function finishAndUpload(
   payload: JoinPayload,
   outcome: 'left' | 'failed',
   errorMessage?: string,
+  leaveReason?: string,
 ) {
   finalizing = true
   try {
-    let attendees: Array<{ name: string; email?: string | null }> = []
+    let attendees: Array<{
+      name: string
+      email?: string | null
+      firstSeenAt: string
+      lastSeenAt: string
+      leftDuringCall: boolean
+    }> = []
     try {
       attendees = (await session?.collectAttendees()) ?? []
     } catch {
@@ -90,7 +97,14 @@ async function finishAndUpload(
         )
       }
     }
-    await recorder?.upload(payload, outcome, errorMessage, attendees)
+    const joinedAtMs = status.startedAt
+    const durationMs =
+      joinedAtMs != null ? Math.max(0, Date.now() - joinedAtMs) : undefined
+    await recorder?.upload(payload, outcome, errorMessage, attendees, {
+      leaveReason,
+      durationMs,
+      uniqueAttendeeCount: attendees.length,
+    })
   } finally {
     finalizing = false
   }
@@ -159,7 +173,7 @@ async function runBot(payload: JoinPayload) {
 
     status.state = 'leaving'
     log('leaving meeting / uploading recording')
-    await finishAndUpload(payload, 'left')
+    await finishAndUpload(payload, 'left', undefined, leaveReason)
     status.state = 'done'
     log('runBot done')
   } catch (error) {
@@ -172,7 +186,12 @@ async function runBot(payload: JoinPayload) {
     await reportStatus(payload, 'failed', message)
 
     try {
-      await finishAndUpload(payload, 'failed', message)
+      await finishAndUpload(
+        payload,
+        'failed',
+        message,
+        stopRequested ? 'stop' : 'failed',
+      )
     } catch (uploadError) {
       logError('Failed to upload failure recording', uploadError)
       try {

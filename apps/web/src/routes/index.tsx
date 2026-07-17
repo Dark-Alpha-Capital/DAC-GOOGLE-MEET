@@ -9,6 +9,7 @@ import {
   type MeetingWithParticipants,
 } from '#/lib/calendar'
 import { requestBotForMeeting } from '#/lib/request-bot'
+import { stopBotForMeeting } from '#/lib/stop-bot'
 import { getSession } from '#/lib/session'
 
 export const Route = createFileRoute('/')({
@@ -222,10 +223,27 @@ function scheduleBadge(item: MeetingWithParticipants) {
   return { label: 'Not scheduled', tone: 'idle' as const }
 }
 
+function canStopBot(item: MeetingWithParticipants) {
+  if (isBotScheduled(item)) return true
+  const run = item.latestBotRun
+  return (
+    run?.status === 'pending' ||
+    run?.status === 'joining' ||
+    run?.status === 'waiting_admission' ||
+    run?.status === 'joined'
+  )
+}
+
 /** Manual schedule is allowed when the meeting can still get a bot workflow. */
 function canScheduleBot(item: MeetingWithParticipants) {
   if (!item.meetLink) return false
-  if (item.status !== 'scheduled') return false
+  // Ongoing / recently-ended calendar events may still be joinable.
+  const endsAt = new Date(item.endsAt).getTime()
+  const graceMs = 4 * 60 * 60 * 1000
+  const joinableWindow =
+    item.status === 'scheduled' ||
+    (item.status === 'completed' && Date.now() < endsAt + graceMs)
+  if (!joinableWindow) return false
   if (isBotScheduled(item)) return false
   const run = item.latestBotRun
   if (
@@ -235,7 +253,6 @@ function canScheduleBot(item: MeetingWithParticipants) {
   ) {
     return false
   }
-  // Successful completion — no re-schedule from the list.
   if (run?.status === 'left') return false
   return true
 }
@@ -243,14 +260,20 @@ function canScheduleBot(item: MeetingWithParticipants) {
 function MeetingRow({
   item,
   onScheduleBot,
+  onStopBot,
   scheduling,
+  stopping,
 }: {
   item: MeetingWithParticipants
   onScheduleBot: (meetingId: string) => void
+  onStopBot: (meetingId: string) => void
   scheduling: boolean
+  stopping: boolean
 }) {
   const badge = scheduleBadge(item)
   const showSchedule = canScheduleBot(item)
+  const showStop = canStopBot(item)
+  const busy = scheduling || stopping
 
   const badgeClass =
     badge.tone === 'scheduled'
@@ -304,11 +327,21 @@ function MeetingRow({
         {showSchedule ? (
           <button
             type="button"
-            disabled={scheduling}
+            disabled={busy}
             onClick={() => onScheduleBot(item.id)}
             className="rounded-full bg-[var(--lagoon-deep)] px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           >
             {scheduling ? 'Scheduling…' : 'Schedule bot'}
+          </button>
+        ) : null}
+        {showStop ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onStopBot(item.id)}
+            className="rounded-full border border-red-300 bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+          >
+            {stopping ? 'Stopping…' : 'Stop bot'}
           </button>
         ) : null}
         <Link
@@ -344,6 +377,7 @@ function HomePage() {
   const { meetings, recent, error, synced, removed } = Route.useLoaderData()
   const [dayOffset, setDayOffset] = useState(0)
   const [schedulingId, setSchedulingId] = useState<string | null>(null)
+  const [stoppingId, setStoppingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const selectedDay = useMemo(
@@ -370,6 +404,23 @@ function HomePage() {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
       setSchedulingId(null)
+    }
+  }
+
+  async function handleStopBot(meetingId: string) {
+    setActionError(null)
+    setStoppingId(meetingId)
+    try {
+      const result = await stopBotForMeeting({ data: { meetingId } })
+      if (!result.ok) {
+        setActionError(result.error ?? 'Failed to stop bot')
+        return
+      }
+      await router.invalidate()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setStoppingId(null)
     }
   }
 
@@ -467,7 +518,9 @@ function HomePage() {
                 key={item.id}
                 item={item}
                 scheduling={schedulingId === item.id}
+                stopping={stoppingId === item.id}
                 onScheduleBot={handleScheduleBot}
+                onStopBot={handleStopBot}
               />
             ))}
           </ul>
@@ -492,7 +545,9 @@ function HomePage() {
                 key={item.id}
                 item={item}
                 scheduling={false}
+                stopping={false}
                 onScheduleBot={handleScheduleBot}
+                onStopBot={handleStopBot}
               />
             ))}
           </ul>

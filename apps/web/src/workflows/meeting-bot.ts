@@ -157,11 +157,18 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
     })
 
     const wakeAt = Math.max(Date.now(), startsAtMs - FIVE_MIN_MS)
-    console.log(
-      `[workflow] sleeping until ${new Date(wakeAt).toISOString()} meeting=${meetingId} (T-5 / immediate if already due)`,
-    )
-    await step.sleepUntil('wake-t-minus-5', wakeAt)
-    console.log(`[workflow] woke meeting=${meetingId} — launching container`)
+    const immediate = wakeAt <= Date.now() + 1_000
+    if (immediate) {
+      console.log(
+        `[workflow] immediate launch meeting=${meetingId} (ongoing / within T-5)`,
+      )
+    } else {
+      console.log(
+        `[workflow] sleeping until ${new Date(wakeAt).toISOString()} meeting=${meetingId} (T-5)`,
+      )
+      await step.sleepUntil('wake-t-minus-5', wakeAt)
+      console.log(`[workflow] woke meeting=${meetingId} — launching container`)
+    }
 
     await step.do('launch', async () => {
       const database = db(this.env)

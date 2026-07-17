@@ -119,6 +119,23 @@ export const Route = createFileRoute('/api/bot/complete')({
         const attendees: MeetingAttendee[] = attendeesRaw
           ? parseAttendeesJson(attendeesRaw)
           : []
+        const leaveReason = form.get('leaveReason')
+          ? String(form.get('leaveReason'))
+          : null
+        const durationMsRaw = form.get('durationMs')
+          ? Number(form.get('durationMs'))
+          : null
+        const durationMs =
+          durationMsRaw != null && Number.isFinite(durationMsRaw)
+            ? Math.max(0, Math.floor(durationMsRaw))
+            : null
+        const uniqueAttendeeCountRaw = form.get('uniqueAttendeeCount')
+          ? Number(form.get('uniqueAttendeeCount'))
+          : null
+        const uniqueAttendeeCount =
+          uniqueAttendeeCountRaw != null && Number.isFinite(uniqueAttendeeCountRaw)
+            ? Math.max(0, Math.floor(uniqueAttendeeCountRaw))
+            : attendees.length
 
         if (!botRunId || !meetingId || !workflowInstanceId) {
           return Response.json({ error: 'Missing fields' }, { status: 400 })
@@ -209,14 +226,25 @@ export const Route = createFileRoute('/api/bot/complete')({
 
         if (status === 'left') {
           try {
+            const startedAt =
+              (
+                await getDb().query.botRun.findFirst({
+                  where: eq(botRun.id, botRunId),
+                })
+              )?.joinedAt?.toISOString() ??
+              meetingRow?.startsAt?.toISOString() ??
+              null
             const attendanceResult = await recordAttendance(
               {
                 meetingId,
                 botRunId,
                 title: meetingRow?.title ?? 'meeting',
                 meetLink: meetingRow?.meetLink ?? null,
-                startedAt: meetingRow?.startsAt?.toISOString() ?? null,
+                startedAt,
                 endedAt: new Date().toISOString(),
+                durationMs,
+                leaveReason,
+                uniqueAttendeeCount,
                 attendees,
               },
               {
@@ -244,6 +272,9 @@ export const Route = createFileRoute('/api/bot/complete')({
             transcriptText,
             attendeesJson:
               attendees.length > 0 ? JSON.stringify(attendees) : null,
+            uniqueAttendeeCount,
+            durationMs,
+            leaveReason,
             attendanceSyncStatus,
             attendanceSyncError,
             errorMessage: combinedError,

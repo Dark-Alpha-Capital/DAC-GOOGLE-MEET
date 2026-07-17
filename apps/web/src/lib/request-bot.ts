@@ -46,20 +46,40 @@ export const requestBotForMeeting = createServerFn({ method: 'POST' })
       if (!row.meetLink) {
         return { ok: false, error: 'Meeting has no Google Meet link' }
       }
-      if (row.status !== 'scheduled') {
+      if (row.status !== 'scheduled' && row.status !== 'completed') {
         return {
           ok: false,
-          error: `Meeting is ${row.status} — only scheduled meetings can get a bot`,
+          error: `Meeting is ${row.status} — cannot schedule a bot`,
+        }
+      }
+      // Overtime / just-ended calendar events are still joinable for a few hours.
+      if (
+        row.status === 'completed' &&
+        Date.now() > row.endsAt.getTime() + 4 * 60 * 60 * 1000
+      ) {
+        return {
+          ok: false,
+          error: 'Meeting ended too long ago to schedule a bot',
         }
       }
 
       try {
+        const now = Date.now()
+        const started = row.startsAt.getTime()
+        const calendarEnd = row.endsAt.getTime()
+        // Ongoing (or overtime) meetings: join immediately with a long runtime window.
+        const ongoing = now >= started - 5 * 60 * 1000
+        const endsAt = ongoing
+          ? new Date(Math.max(calendarEnd, now + 4 * 60 * 60 * 1000))
+          : row.endsAt
+
         const workflowInstanceId = await scheduleMeetingBot({
           meetingId: row.id,
           meetLink: row.meetLink,
-          startsAt: row.startsAt,
-          endsAt: row.endsAt,
-          status: row.status,
+          // Force immediate wake for ongoing meetings.
+          startsAt: ongoing ? new Date(Math.min(started, now)) : row.startsAt,
+          endsAt,
+          status: 'scheduled',
           // Only treat as "previous schedule" when a workflow was already stored.
           previousStartsAtMs: row.workflowInstanceId
             ? row.startsAt.getTime()
@@ -80,6 +100,9 @@ export const requestBotForMeeting = createServerFn({ method: 'POST' })
           .set({ workflowInstanceId })
           .where(eq(meeting.id, row.id))
 
+        console.log(
+          `[requestBotForMeeting] scheduled meeting=${row.id} ongoing=${ongoing} endsAt=${endsAt.toISOString()} instance=${workflowInstanceId}`,
+        )
         return { ok: true, workflowInstanceId }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
