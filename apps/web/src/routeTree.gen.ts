@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MeetingMeetingIdRouteImport } from './routes/meeting/$meetingId'
 import { Route as ApiBotStatusRouteImport } from './routes/api/bot/status'
+import { Route as ApiBotForceStopRouteImport } from './routes/api/bot/force-stop'
 import { Route as ApiBotCompleteRouteImport } from './routes/api/bot/complete'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -36,6 +37,11 @@ const ApiBotStatusRoute = ApiBotStatusRouteImport.update({
   path: '/api/bot/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBotForceStopRoute = ApiBotForceStopRouteImport.update({
+  id: '/api/bot/force-stop',
+  path: '/api/bot/force-stop',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBotCompleteRoute = ApiBotCompleteRouteImport.update({
   id: '/api/bot/complete',
   path: '/api/bot/complete',
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
+  '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
+  '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
+  '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +89,7 @@ export interface FileRouteTypes {
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
+    | '/api/bot/force-stop'
     | '/api/bot/status'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
+    | '/api/bot/force-stop'
     | '/api/bot/status'
   id:
     | '__root__'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
+    | '/api/bot/force-stop'
     | '/api/bot/status'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +117,7 @@ export interface RootRouteChildren {
   MeetingMeetingIdRoute: typeof MeetingMeetingIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBotCompleteRoute: typeof ApiBotCompleteRoute
+  ApiBotForceStopRoute: typeof ApiBotForceStopRoute
   ApiBotStatusRoute: typeof ApiBotStatusRoute
 }
 
@@ -138,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBotStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bot/force-stop': {
+      id: '/api/bot/force-stop'
+      path: '/api/bot/force-stop'
+      fullPath: '/api/bot/force-stop'
+      preLoaderRoute: typeof ApiBotForceStopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/bot/complete': {
       id: '/api/bot/complete'
       path: '/api/bot/complete'
@@ -161,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   MeetingMeetingIdRoute: MeetingMeetingIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBotCompleteRoute: ApiBotCompleteRoute,
+  ApiBotForceStopRoute: ApiBotForceStopRoute,
   ApiBotStatusRoute: ApiBotStatusRoute,
 }
 export const routeTree = rootRouteImport

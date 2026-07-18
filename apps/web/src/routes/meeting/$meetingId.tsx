@@ -1,13 +1,19 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 
+import { Alert, AlertDescription } from '#/components/ui/alert'
+import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '#/components/ui/tabs'
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '#/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { getMeetingDetail } from '#/lib/meeting-detail'
 import { getSession } from '#/lib/session'
+import { botTimeline, formatDuration, formatWhen } from '#/lib/utils'
 
 export const Route = createFileRoute('/meeting/$meetingId')({
   beforeLoad: async () => {
@@ -26,65 +32,18 @@ export const Route = createFileRoute('/meeting/$meetingId')({
   component: MeetingDetailPage,
 })
 
-function formatWhen(value: Date | string | null | undefined) {
-  if (!value) return '—'
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-function botTimeline(status: string | undefined) {
-  const steps = [
-    'pending',
-    'joining',
-    'waiting_admission',
-    'joined',
-    'left',
-  ] as const
-  if (!status) {
-    return steps.map((s) => ({ id: s, done: false, current: false }))
-  }
-  if (status === 'failed') {
-    return [
-      ...steps.slice(0, 3).map((s) => ({ id: s, done: true, current: false })),
-      { id: 'failed', done: true, current: true },
-    ]
-  }
-  const idx = steps.indexOf(status as (typeof steps)[number])
-  return steps.map((s, i) => ({
-    id: s,
-    done: idx >= 0 && i <= idx,
-    current: s === status,
-  }))
-}
-
-function formatDuration(ms: number | null | undefined) {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
-  const totalSec = Math.round(ms / 1000)
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m ${s}s`
-  return `${s}s`
-}
-
 function MeetingDetailPage() {
   const { meeting, error } = Route.useLoaderData()
 
   if (error || !meeting) {
     return (
-      <main className="page-wrap px-4 py-12">
-        <Link to="/" className="text-sm text-[var(--lagoon-deep)]">
-          ← Back
-        </Link>
-        <p className="mt-6 text-sm text-red-600">{error ?? 'Not found'}</p>
+      <main className="mx-auto max-w-3xl px-4 py-12">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/">← Meetings</Link>
+        </Button>
+        <Alert variant="destructive" className="mt-6">
+          <AlertDescription>{error ?? 'Not found'}</AlertDescription>
+        </Alert>
       </main>
     )
   }
@@ -94,268 +53,282 @@ function MeetingDetailPage() {
   const timeline = botTimeline(run?.status)
 
   return (
-    <main className="page-wrap px-4 py-12">
-      <Link
-        to="/"
-        className="text-sm font-medium text-[var(--lagoon-deep)] hover:underline"
-      >
-        ← All meetings
-      </Link>
+    <main className="mx-auto max-w-3xl space-y-6 px-4 py-12">
+      <Button variant="ghost" size="sm" asChild>
+        <Link to="/">← Meetings</Link>
+      </Button>
 
-      <header className="mt-6">
-        <h1 className="display-title text-3xl font-bold tracking-tight text-[var(--sea-ink)] sm:text-4xl">
-          {meeting.title}
-        </h1>
-        <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-          Calendar: {formatWhen(meeting.startsAt)} – {formatWhen(meeting.endsAt)}
-        </p>
-        {meeting.meetLink ? (
-          <a
-            href={meeting.meetLink}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-block text-sm text-[var(--lagoon-deep)]"
-          >
-            {meeting.meetLink}
-          </a>
-        ) : null}
-        <p className="mt-3 text-sm text-[var(--sea-ink)]">
-          Meeting: <span className="font-medium">{meeting.status}</span>
-          {meeting.workflowStatus
-            ? ` · workflow ${meeting.workflowStatus}`
-            : ''}
-        </p>
-        {meeting.workflowError ? (
-          <p className="mt-1 text-sm text-red-600">{meeting.workflowError}</p>
-        ) : null}
-        {run?.errorMessage ? (
-          <p className="mt-1 text-sm text-red-600">{run.errorMessage}</p>
-        ) : null}
-      </header>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl tracking-tight sm:text-3xl">
+            {meeting.title}
+          </CardTitle>
+          <CardDescription>
+            Calendar: {formatWhen(meeting.startsAt, 'datetime')} –{' '}
+            {formatWhen(meeting.endsAt, 'datetime')}
+          </CardDescription>
+          {meeting.meetLink ? (
+            <a
+              href={meeting.meetLink}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {meeting.meetLink}
+            </a>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Badge variant="outline">{meeting.status}</Badge>
+            {meeting.workflowStatus ? (
+              <Badge variant="secondary">
+                workflow {meeting.workflowStatus}
+              </Badge>
+            ) : null}
+          </div>
+          {meeting.workflowError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{meeting.workflowError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {run?.errorMessage ? (
+            <Alert variant="destructive">
+              <AlertDescription>{run.errorMessage}</AlertDescription>
+            </Alert>
+          ) : null}
+        </CardHeader>
+      </Card>
 
-      <section className="island-shell mt-8 rounded-2xl px-5 py-5 sm:px-8">
-        <h2 className="text-sm font-semibold text-[var(--sea-ink)]">
-          Call overview
-        </h2>
-        {!run ? (
-          <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-            Bot has not started for this meeting yet.
-          </p>
-        ) : (
-          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-[var(--sea-ink-soft)]">Bot joined</dt>
-              <dd className="font-medium text-[var(--sea-ink)]">
-                {formatWhen(run.joinedAt)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--sea-ink-soft)]">Bot left / ended</dt>
-              <dd className="font-medium text-[var(--sea-ink)]">
-                {formatWhen(run.leftAt)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--sea-ink-soft)]">Duration</dt>
-              <dd className="font-medium text-[var(--sea-ink)]">
-                {formatDuration(run.durationMs)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--sea-ink-soft)]">People observed</dt>
-              <dd className="font-medium text-[var(--sea-ink)]">
-                {run.uniqueAttendeeCount ?? run.attendees.length}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--sea-ink-soft)]">Leave reason</dt>
-              <dd className="font-medium text-[var(--sea-ink)]">
-                {run.leaveReason?.replace(/_/g, ' ') ?? '—'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--sea-ink-soft)]">Bot status</dt>
-              <dd className="font-medium text-[var(--sea-ink)]">{run.status}</dd>
-            </div>
-          </dl>
-        )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Call overview</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!run ? (
+            <p className="text-sm text-muted-foreground">
+              Bot has not started for this meeting yet.
+            </p>
+          ) : (
+            <dl className="grid gap-4 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-muted-foreground">Bot joined</dt>
+                <dd className="mt-0.5 font-medium">
+                  {formatWhen(run.joinedAt, 'datetime')}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">
+                  Bot left / ended
+                </dt>
+                <dd className="mt-0.5 font-medium">{formatWhen(run.leftAt, 'datetime')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Duration</dt>
+                <dd className="mt-0.5 font-medium">
+                  {formatDuration(run.durationMs)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">
+                  People observed
+                </dt>
+                <dd className="mt-0.5 font-medium">
+                  {run.uniqueAttendeeCount ?? run.attendees.length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Leave reason</dt>
+                <dd className="mt-0.5 font-medium">
+                  {run.leaveReason?.replace(/_/g, ' ') ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Bot status</dt>
+                <dd className="mt-0.5">
+                  <Badge variant="secondary">{run.status}</Badge>
+                </dd>
+              </div>
+            </dl>
+          )}
 
-        {run ? (
-          <>
-            <ol className="mt-4 flex flex-wrap gap-2">
+          {run ? (
+            <div className="flex flex-wrap gap-1.5">
               {timeline.map((step) => (
-                <li
+                <Badge
                   key={step.id}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  variant={
                     step.current
-                      ? 'bg-[var(--lagoon-deep)] text-white'
+                      ? 'default'
                       : step.done
-                        ? 'bg-black/10 text-[var(--sea-ink)]'
-                        : 'bg-black/5 text-[var(--sea-ink-soft)]'
-                  }`}
+                        ? 'secondary'
+                        : 'outline'
+                  }
                 >
                   {step.id.replace(/_/g, ' ')}
-                </li>
+                </Badge>
               ))}
-            </ol>
-            <p className="mt-3 font-mono text-xs text-[var(--sea-ink-soft)]">
-              {run.recordingKey ? `audio ${run.recordingKey}` : 'no audio key'}
-            </p>
-          </>
-        ) : null}
+            </div>
+          ) : null}
 
-        {meeting.participants.length > 0 ? (
-          <div className="mt-4">
-            <h3 className="text-xs font-semibold text-[var(--sea-ink-soft)]">
-              Calendar invitees
-            </h3>
-            <ul className="mt-2 space-y-1 text-sm text-[var(--sea-ink-soft)]">
-              {meeting.participants.map((p) => (
-                <li key={p.email}>
-                  {p.displayName ?? p.email}
-                  {p.responseStatus ? ` · ${p.responseStatus}` : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </section>
+          {meeting.participants.length > 0 ? (
+            <div>
+              <h3 className="text-xs font-medium text-muted-foreground">
+                Calendar invitees
+              </h3>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                {meeting.participants.map((p) => (
+                  <li key={p.email}>
+                    {p.displayName ?? p.email}
+                    {p.responseStatus ? ` · ${p.responseStatus}` : ''}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
-      <section className="island-shell mt-8 rounded-2xl px-5 py-5 sm:px-8">
-        <Tabs defaultValue="transcript">
-          <TabsList>
-            <TabsTrigger value="transcript">Transcript</TabsTrigger>
-            <TabsTrigger value="summary">AI summary</TabsTrigger>
-            <TabsTrigger value="attendance">Attendance</TabsTrigger>
-          </TabsList>
+      <Card>
+        <CardContent className="pt-6">
+          <Tabs defaultValue="transcript">
+            <TabsList>
+              <TabsTrigger value="transcript">Transcript</TabsTrigger>
+              <TabsTrigger value="summary">AI summary</TabsTrigger>
+              <TabsTrigger value="attendance">Attendance</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="transcript" className="mt-4">
-            {!run ? (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                No bot run yet.
-              </p>
-            ) : run.status === 'joined' ||
-              run.status === 'joining' ||
-              run.status === 'waiting_admission' ? (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                Meeting in progress — transcript will appear after the bot
-                leaves and uploads audio.
-              </p>
-            ) : run.transcriptText ? (
-              <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-lg bg-black/5 p-4 text-sm text-[var(--sea-ink)]">
-                {run.transcriptText}
-              </pre>
-            ) : run.status === 'failed' ? (
-              <p className="text-sm text-red-600">
-                Bot failed{run.errorMessage ? `: ${run.errorMessage}` : '.'}
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                No transcript yet
-                {run.recordingKey
-                  ? ' (audio saved; transcription may have failed).'
-                  : '.'}
-              </p>
-            )}
-          </TabsContent>
-
-          <TabsContent value="summary" className="mt-4">
-            {!notes ? (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                {run?.transcriptText
-                  ? 'Notes workflow not started yet — refresh shortly.'
-                  : 'AI summary appears after transcription completes.'}
-              </p>
-            ) : notes.status === 'pending' || notes.status === 'running' ? (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                Generating summary and action items…
-              </p>
-            ) : notes.status === 'failed' ? (
-              <p className="text-sm text-red-600">
-                Notes failed
-                {notes.errorMessage ? `: ${notes.errorMessage}` : '.'}
-              </p>
-            ) : (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-semibold text-[var(--sea-ink)]">
-                    Summary
-                  </h3>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--sea-ink)]">
-                    {notes.summaryText || '—'}
-                  </p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-[var(--sea-ink)]">
-                    Action items
-                  </h3>
-                  {notes.actionItems.length === 0 ? (
-                    <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-                      None detected.
-                    </p>
-                  ) : (
-                    <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-[var(--sea-ink)]">
-                      {notes.actionItems.map((item, i) => (
-                        <li key={`${item.text}-${i}`}>
-                          {item.text}
-                          {item.assignee ? ` — ${item.assignee}` : ''}
-                          {item.dueDate ? ` (due ${item.dueDate})` : ''}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="attendance" className="mt-4">
-            {!run ? (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                No bot run yet.
-              </p>
-            ) : run.attendees.length === 0 ? (
-              <p className="text-sm text-[var(--sea-ink-soft)]">
-                No live attendees captured yet
-                {run.status === 'left'
-                  ? ' (Meet UI may hide names from the bot).'
-                  : ' — polled throughout the call; available after the bot leaves.'}
-              </p>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-[var(--sea-ink-soft)]">
-                  Everyone observed during the call ({run.attendees.length}).
-                  Sync: {run.attendanceSyncStatus ?? '—'}
-                  {run.attendanceSyncError
-                    ? ` · ${run.attendanceSyncError}`
-                    : ''}
+            <TabsContent value="transcript" className="mt-4">
+              {!run ? (
+                <p className="text-sm text-muted-foreground">No bot run yet.</p>
+              ) : run.status === 'joined' ||
+                run.status === 'joining' ||
+                run.status === 'waiting_admission' ? (
+                <p className="text-sm text-muted-foreground">
+                  Meeting in progress — transcript appears after the bot leaves.
                 </p>
-                <ul className="divide-y divide-[var(--line)] text-sm text-[var(--sea-ink)]">
-                  {run.attendees.map((person, i) => (
-                    <li key={`${person.name}-${i}`} className="py-2">
-                      <div className="font-medium">
-                        {person.name}
-                        {person.email ? ` · ${person.email}` : ''}
-                        {person.leftDuringCall ? (
-                          <span className="ml-2 text-xs font-normal text-[var(--sea-ink-soft)]">
-                            left mid-call
+              ) : run.transcriptText ? (
+                <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap text-sm">
+                  {run.transcriptText}
+                </pre>
+              ) : run.status === 'failed' ? (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    Bot failed{run.errorMessage ? `: ${run.errorMessage}` : '.'}
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No transcript yet
+                  {run.recordingKey
+                    ? ' (audio saved; transcription may have failed).'
+                    : '.'}
+                </p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="summary" className="mt-4">
+              {!notes ? (
+                <p className="text-sm text-muted-foreground">
+                  {run?.transcriptText
+                    ? 'Notes workflow not started yet — refresh shortly.'
+                    : 'AI summary appears after transcription completes.'}
+                </p>
+              ) : notes.status === 'pending' || notes.status === 'running' ? (
+                <p className="text-sm text-muted-foreground">
+                  Generating summary and action items…
+                </p>
+              ) : notes.status === 'failed' ? (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    Notes failed
+                    {notes.errorMessage ? `: ${notes.errorMessage}` : '.'}
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-sm font-medium">Summary</h3>
+                    <p className="mt-2 whitespace-pre-wrap text-sm">
+                      {notes.summaryText || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium">Action items</h3>
+                    {notes.actionItems.length === 0 ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        None detected.
+                      </p>
+                    ) : (
+                      <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm">
+                        {notes.actionItems.map((item, i) => (
+                          <li key={`${item.text}-${i}`}>
+                            {item.text}
+                            {item.assignee ? ` — ${item.assignee}` : ''}
+                            {item.dueDate ? ` (due ${item.dueDate})` : ''}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="attendance" className="mt-4">
+              {!run ? (
+                <p className="text-sm text-muted-foreground">No bot run yet.</p>
+              ) : run.attendees.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No live attendees captured yet
+                  {run.status === 'left'
+                    ? ' (Meet UI may hide names from the bot).'
+                    : ' — available after the bot leaves.'}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Everyone observed during the call ({run.attendees.length}).
+                    Sync: {run.attendanceSyncStatus ?? '—'}
+                    {run.attendanceSyncError
+                      ? ` · ${run.attendanceSyncError}`
+                      : ''}
+                  </p>
+                  <ol className="space-y-3">
+                    {run.attendees.map((person, i) => (
+                      <li
+                        key={`${person.name}-${i}`}
+                        className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
+                      >
+                        <div className="flex gap-3">
+                          <span className="w-6 shrink-0 tabular-nums text-muted-foreground">
+                            {i + 1}.
                           </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-0.5 text-xs text-[var(--sea-ink-soft)]">
-                        first seen {formatWhen(person.firstSeenAt)}
-                        {person.lastSeenAt
-                          ? ` · last seen ${formatWhen(person.lastSeenAt)}`
-                          : ''}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </section>
+                          <div className="min-w-0">
+                            <div className="font-medium">
+                              {person.name}
+                              {person.email ? ` · ${person.email}` : ''}
+                              {person.leftDuringCall ? (
+                                <Badge variant="outline" className="ml-2">
+                                  left mid-call
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              first seen {formatWhen(person.firstSeenAt, 'datetime')}
+                              {person.lastSeenAt
+                                ? ` · last seen ${formatWhen(person.lastSeenAt, 'datetime')}`
+                                : ''}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </main>
   )
 }

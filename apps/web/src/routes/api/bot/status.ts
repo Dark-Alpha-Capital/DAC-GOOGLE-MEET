@@ -11,7 +11,14 @@ function unauthorized() {
 
 function assertBotSecret(request: Request) {
   const secret = request.headers.get('x-bot-secret')
-  return Boolean(env.BOT_INTERNAL_SECRET) && secret === env.BOT_INTERNAL_SECRET
+  const expected = env.BOT_INTERNAL_SECRET
+  if (!expected || !secret) return false
+  if (secret.length !== expected.length) return false
+  let mismatch = 0
+  for (let i = 0; i < expected.length; i++) {
+    mismatch |= secret.charCodeAt(i) ^ expected.charCodeAt(i)
+  }
+  return mismatch === 0
 }
 
 export const Route = createFileRoute('/api/bot/status')({

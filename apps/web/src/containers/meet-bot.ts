@@ -3,7 +3,6 @@ import { env } from 'cloudflare:workers'
 
 /**
  * One Chromium Meet bot per meeting id (`getContainer(env.MEET_BOT_CONTAINER, meetingId)`).
- * sleepAfter is long; onActivityExpired renews instead of stopping while a job may still run.
  */
 export class MeetBotContainer extends Container {
   defaultPort = 8080
@@ -21,6 +20,36 @@ export class MeetBotContainer extends Container {
     PULSE_SINK: 'meet_sink',
     /** Optional; when set, meet-bot requires x-bot-secret on /join and /stop. */
     BOT_INTERNAL_SECRET: env.BOT_INTERNAL_SECRET ?? '',
+  }
+
+  override async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    // Explicit stop from the Worker: ask the bot to leave, then kill the container.
+    if (request.method === 'POST' && url.pathname === '/stop') {
+      try {
+        await this.containerFetch(
+          new Request('http://container/stop', {
+            method: 'POST',
+            headers: request.headers,
+          }),
+        )
+      } catch (error) {
+        console.error('[MeetBotContainer] bot /stop failed', error)
+      }
+      try {
+        await this.stop()
+      } catch (error) {
+        console.error('[MeetBotContainer] container stop failed', error)
+        try {
+          await this.destroy()
+        } catch {
+          // ignore
+        }
+      }
+      return Response.json({ stopped: true })
+    }
+
+    return this.containerFetch(request)
   }
 
   override async onActivityExpired(): Promise<void> {

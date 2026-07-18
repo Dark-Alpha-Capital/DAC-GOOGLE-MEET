@@ -223,9 +223,10 @@ export class MeetingBotWorkflow extends WorkflowEntrypoint<
 
     const timeoutMs = Math.max(
       endsAtMs - Date.now() + ADMISSION_BUFFER_MS,
-      ADMISSION_BUFFER_MS,
+      // Ongoing / overtime meetings need a long wait window.
+      4 * 60 * 60 * 1000,
     )
-    const timeoutMinutes = Math.max(Math.ceil(timeoutMs / 60_000), 15)
+    const timeoutMinutes = Math.max(Math.ceil(timeoutMs / 60_000), 60)
 
     let done: RecordingDonePayload
     try {
