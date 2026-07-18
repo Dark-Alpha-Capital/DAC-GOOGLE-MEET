@@ -5,6 +5,7 @@ import {
   redirect,
   useRouter,
 } from '@tanstack/react-router'
+import { ChevronDown } from 'lucide-react'
 
 import { Alert, AlertDescription } from '#/components/ui/alert'
 import { Badge } from '#/components/ui/badge'
@@ -16,6 +17,11 @@ import {
   CardHeader,
   CardTitle,
 } from '#/components/ui/card'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '#/components/ui/collapsible'
 import { Skeleton } from '#/components/ui/skeleton'
 import { authClient } from '#/lib/auth-client'
 import {
@@ -301,14 +307,23 @@ function MeetingRow({
             </div>
 
             {item.participants.length > 0 ? (
-              <ul className="space-y-0.5 text-sm text-muted-foreground">
-                {item.participants.map((p) => (
-                  <li key={`${item.id}-${p.email}`}>
-                    {p.displayName ?? p.email}
-                    {p.responseStatus ? ` · ${p.responseStatus}` : ''}
-                  </li>
-                ))}
-              </ul>
+              <Collapsible>
+                <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md py-1 text-left text-sm text-muted-foreground hover:text-foreground [&[data-state=open]>svg]:rotate-180">
+                  <ChevronDown className="size-4 shrink-0 transition-transform" />
+                  {item.participants.length} invitee
+                  {item.participants.length === 1 ? '' : 's'}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ul className="mt-1 space-y-0.5 pl-5 text-sm text-muted-foreground">
+                    {item.participants.map((p) => (
+                      <li key={`${item.id}-${p.email}`}>
+                        {p.displayName ?? p.email}
+                        {p.responseStatus ? ` · ${p.responseStatus}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
             ) : (
               <p className="text-sm text-muted-foreground">No invitees listed</p>
             )}
