@@ -40,9 +40,9 @@ export const stopBotForMeeting = createServerFn({ method: 'POST' })
   .validator((data: unknown) => {
     const meetingId =
       typeof data === 'object' &&
-      data &&
-      'meetingId' in data &&
-      typeof (data as { meetingId: unknown }).meetingId === 'string'
+        data &&
+        'meetingId' in data &&
+        typeof (data as { meetingId: unknown }).meetingId === 'string'
         ? (data as { meetingId: string }).meetingId
         : ''
     if (!meetingId) throw new Error('meetingId required')
