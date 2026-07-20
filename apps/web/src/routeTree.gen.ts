@@ -10,27 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as MeetingMeetingIdRouteImport } from './routes/meeting/$meetingId'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as ApiBotStatusRouteImport } from './routes/api/bot/status'
 import { Route as ApiBotForceStopRouteImport } from './routes/api/bot/force-stop'
 import { Route as ApiBotCompleteRouteImport } from './routes/api/bot/complete'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AppMeetingMeetingIdRouteImport } from './routes/_app/meeting/$meetingId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MeetingMeetingIdRoute = MeetingMeetingIdRouteImport.update({
-  id: '/meeting/$meetingId',
-  path: '/meeting/$meetingId',
-  getParentRoute: () => rootRouteImport,
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
 } as any)
 const ApiBotStatusRoute = ApiBotStatusRouteImport.update({
   id: '/api/bot/status',
@@ -52,20 +52,25 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppMeetingMeetingIdRoute = AppMeetingMeetingIdRouteImport.update({
+  id: '/meeting/$meetingId',
+  path: '/meeting/$meetingId',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
-  '/meeting/$meetingId': typeof MeetingMeetingIdRoute
+  '/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
   '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/meeting/$meetingId': typeof MeetingMeetingIdRoute
+  '/': typeof AppIndexRoute
+  '/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
   '/api/bot/force-stop': typeof ApiBotForceStopRoute
@@ -73,9 +78,10 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/meeting/$meetingId': typeof MeetingMeetingIdRoute
+  '/_app/': typeof AppIndexRoute
+  '/_app/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
   '/api/bot/force-stop': typeof ApiBotForceStopRoute
@@ -93,8 +99,8 @@ export interface FileRouteTypes {
     | '/api/bot/status'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/login'
+    | '/'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
@@ -102,9 +108,10 @@ export interface FileRouteTypes {
     | '/api/bot/status'
   id:
     | '__root__'
-    | '/'
+    | '/_app'
     | '/login'
-    | '/meeting/$meetingId'
+    | '/_app/'
+    | '/_app/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
     | '/api/bot/force-stop'
@@ -112,9 +119,8 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
-  MeetingMeetingIdRoute: typeof MeetingMeetingIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBotCompleteRoute: typeof ApiBotCompleteRoute
   ApiBotForceStopRoute: typeof ApiBotForceStopRoute
@@ -130,19 +136,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/meeting/$meetingId': {
-      id: '/meeting/$meetingId'
-      path: '/meeting/$meetingId'
-      fullPath: '/meeting/$meetingId'
-      preLoaderRoute: typeof MeetingMeetingIdRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_app/': {
+      id: '/_app/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
     }
     '/api/bot/status': {
       id: '/api/bot/status'
@@ -172,13 +178,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/meeting/$meetingId': {
+      id: '/_app/meeting/$meetingId'
+      path: '/meeting/$meetingId'
+      fullPath: '/meeting/$meetingId'
+      preLoaderRoute: typeof AppMeetingMeetingIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppIndexRoute: typeof AppIndexRoute
+  AppMeetingMeetingIdRoute: typeof AppMeetingMeetingIdRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppIndexRoute: AppIndexRoute,
+  AppMeetingMeetingIdRoute: AppMeetingMeetingIdRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
-  MeetingMeetingIdRoute: MeetingMeetingIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBotCompleteRoute: ApiBotCompleteRoute,
   ApiBotForceStopRoute: ApiBotForceStopRoute,

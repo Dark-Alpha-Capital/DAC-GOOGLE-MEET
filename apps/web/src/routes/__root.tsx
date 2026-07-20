@@ -5,7 +5,6 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-import Header from '../components/Header'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
@@ -30,7 +29,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'dac-google meet',
+        title: 'DAC Meeting Board',
       },
     ],
     links: [
@@ -42,7 +41,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
       {
         rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap',
+        href: 'https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap',
       },
       {
         rel: 'stylesheet',
@@ -61,7 +60,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-muted">
-        <Header />
         {children}
         <TanStackDevtools
           config={{

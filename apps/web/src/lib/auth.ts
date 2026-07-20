@@ -24,14 +24,12 @@ export function getAuth() {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
         clientSecret: env.GOOGLE_CLIENT_SECRET,
-        // openid/email/profile are included by default; add Calendar for offline sync
         scope: [
           'openid',
           'email',
           'profile',
           'https://www.googleapis.com/auth/calendar.readonly',
         ],
-        // Required so Google returns a refresh_token (stored on account.refreshToken)
         accessType: 'offline',
         prompt: 'select_account consent',
       },
