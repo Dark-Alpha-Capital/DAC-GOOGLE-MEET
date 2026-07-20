@@ -691,7 +691,7 @@ export class MeetGuestSession {
       log('permission override skipped', error)
     }
 
-    // Confirm who we are before joining Meet
+    // Confirm who we are before joining Meet (signed-in profile required in containers).
     try {
       await this.page.goto('https://myaccount.google.com/', {
         waitUntil: 'domcontentloaded',
@@ -707,11 +707,16 @@ export class MeetGuestSession {
         !accountPreview.toLowerCase().includes('@')
       ) {
         throw new Error(
-          'Chrome profile is NOT signed in to Google. Run: bun run chrome:roghan then sign in, leave that Chrome open, then bun run dev:roghan',
+          'Chrome profile is not signed in to Google. ' +
+            'Mac→Linux profile copies usually lose the session. ' +
+            'Bootstrap a Linux login inside the image — see apps/meet-bot/scripts/bootstrap-linux-profile.md — then redeploy containers.',
         )
       }
     } catch (error) {
-      if (error instanceof Error && error.message.includes('NOT signed in')) {
+      if (
+        error instanceof Error &&
+        error.message.includes('not signed in to Google')
+      ) {
         throw error
       }
       log('could not verify Google account (continuing)', error)
@@ -763,8 +768,8 @@ export class MeetGuestSession {
         await dumpDebug(this.page, 'blocked')
         throw new Error(
           'Meet blocked this browser ("You can\'t join this video call"). ' +
-            'Invite roghankundra@gmail.com to the calendar event, set Meet access to Open or allow ask-to-join, ' +
-            'and use CDP mode (bun run chrome:roghan + bun run dev:roghan).',
+            'Invite the bot Gmail to the calendar event, set Meet host controls to allow ask-to-join / open access, ' +
+            'and ensure the container Chrome profile is signed in (see apps/meet-bot/scripts/bootstrap-linux-profile.md).',
         )
       }
 
