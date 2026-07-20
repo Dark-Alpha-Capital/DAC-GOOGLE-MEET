@@ -26,6 +26,18 @@ PROFILE_DIR="$BOT_USER_DATA_DIR/$BOT_PROFILE_DIRECTORY"
 COOKIES="$PROFILE_DIR/Cookies"
 COOKIES_DB="$PROFILE_DIR/Network/Cookies"
 
+# Singleton* from bootstrap (or a crash) → "profile in use by another Chromium process".
+clear_chrome_locks() {
+  dir="$1"
+  [ -d "$dir" ] || return 0
+  rm -f \
+    "$dir/SingletonLock" \
+    "$dir/SingletonCookie" \
+    "$dir/SingletonSocket" \
+    "$dir/.org.chromium.Chromium.lockfile" \
+    2>/dev/null || true
+}
+
 if [ "$USE_CHROME_PROFILE" = "1" ]; then
   if [ ! -d "$PROFILE_DIR" ]; then
     echo "[entrypoint] ERROR: USE_CHROME_PROFILE=1 but missing $PROFILE_DIR"
@@ -37,6 +49,7 @@ if [ "$USE_CHROME_PROFILE" = "1" ]; then
     echo "[entrypoint] Sign in inside Linux Chromium, then rebuild the image."
     exit 1
   fi
+  clear_chrome_locks "$BOT_USER_DATA_DIR"
   echo "[entrypoint] using Chrome profile $BOT_USER_DATA_DIR ($BOT_PROFILE_DIRECTORY)"
 else
   echo "[entrypoint] WARNING: USE_CHROME_PROFILE off — guest joins will likely be blocked by Meet"

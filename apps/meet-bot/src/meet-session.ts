@@ -629,6 +629,20 @@ export class MeetGuestSession {
 
       if (!signedInDir) {
         fs.mkdirSync(userDataDir, { recursive: true })
+      } else {
+        // Baked profiles often retain Singleton* from bootstrap host → launch fails.
+        for (const name of [
+          'SingletonLock',
+          'SingletonCookie',
+          'SingletonSocket',
+          '.org.chromium.Chromium.lockfile',
+        ]) {
+          try {
+            fs.unlinkSync(path.join(userDataDir, name))
+          } catch {
+            // ignore missing
+          }
+        }
       }
 
       log(

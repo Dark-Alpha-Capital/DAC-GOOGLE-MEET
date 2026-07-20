@@ -33,7 +33,10 @@ COPY src ./src
 RUN bun run build
 # Populated by: bun run bootstrap:linux-profile (gitignored; Linux sign-in only)
 COPY chrome-user-data /data/chrome
-RUN chmod -R a+rwX /data/chrome
+# Drop bootstrap Singleton* so Cloudflare instances can launch Chromium.
+RUN rm -f /data/chrome/SingletonLock /data/chrome/SingletonCookie \
+      /data/chrome/SingletonSocket /data/chrome/.org.chromium.Chromium.lockfile \
+  && chmod -R a+rwX /data/chrome
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

@@ -112,8 +112,18 @@ else
   exit 1
 fi
 
+# Stop the UI container first so Chromium releases the profile, then drop locks.
+cleanup
+trap - EXIT
+rm -f \
+  "${PROFILE_HOST}/SingletonLock" \
+  "${PROFILE_HOST}/SingletonCookie" \
+  "${PROFILE_HOST}/SingletonSocket" \
+  "${PROFILE_HOST}/.org.chromium.Chromium.lockfile"
+echo "==> Cleared Chromium Singleton* locks (required before baking into the image)"
+
 echo ""
 echo "Next — bake profile into the Worker container image and deploy:"
 echo "  cd ../web && bun run deploy:containers"
 echo ""
-echo "Success looks like: guest=false, and no 'not signed in to Google' error."
+echo "Success looks like: guest=false, and no 'not signed in to Google' / profile-lock errors."
