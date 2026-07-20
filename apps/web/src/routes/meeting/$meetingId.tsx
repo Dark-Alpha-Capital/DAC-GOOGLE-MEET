@@ -1,4 +1,10 @@
-import { createFileRoute, Link, redirect } from '@tanstack/react-router'
+import { useState } from 'react'
+import {
+  createFileRoute,
+  Link,
+  redirect,
+  useRouter,
+} from '@tanstack/react-router'
 
 import { Alert, AlertDescription } from '#/components/ui/alert'
 import { Badge } from '#/components/ui/badge'
@@ -12,6 +18,7 @@ import {
 } from '#/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { getMeetingDetail } from '#/lib/meeting-detail'
+import { regenerateNotes } from '#/lib/regenerate-notes'
 import { getSession } from '#/lib/session'
 import { botTimeline, formatDuration, formatWhen } from '#/lib/utils'
 
@@ -33,7 +40,27 @@ export const Route = createFileRoute('/meeting/$meetingId')({
 })
 
 function MeetingDetailPage() {
+  const router = useRouter()
   const { meeting, error } = Route.useLoaderData()
+  const [regenerating, setRegenerating] = useState(false)
+  const [notesError, setNotesError] = useState<string | null>(null)
+
+  async function handleRegenerateNotes(meetingId: string) {
+    setNotesError(null)
+    setRegenerating(true)
+    try {
+      const result = await regenerateNotes({ data: { meetingId } })
+      if (!result.ok) {
+        setNotesError(result.error ?? 'Failed to regenerate notes')
+        return
+      }
+      await router.invalidate()
+    } catch (err) {
+      setNotesError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   if (error || !meeting) {
     return (
@@ -187,6 +214,32 @@ function MeetingDetailPage() {
         </CardContent>
       </Card>
 
+      {run?.recordingKey ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Recording</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Streams through /api/recording/:botRunId (Nextcloud is behind
+                Basic auth). webm/opus plays in Chrome & Firefox; Safari cannot. */}
+            <audio
+              controls
+              preload="none"
+              className="w-full"
+              src={`/api/recording/${run.id}`}
+            >
+              Your browser can’t play this recording.
+            </audio>
+            <a
+              href={`/api/recording/${run.id}?download=1`}
+              className="inline-block text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Download audio (.webm)
+            </a>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardContent className="pt-6">
           <Tabs defaultValue="transcript">
@@ -225,7 +278,7 @@ function MeetingDetailPage() {
               )}
             </TabsContent>
 
-            <TabsContent value="summary" className="mt-4">
+            <TabsContent value="summary" className="mt-4 space-y-4">
               {!notes ? (
                 <p className="text-sm text-muted-foreground">
                   {run?.transcriptText
@@ -271,6 +324,38 @@ function MeetingDetailPage() {
                   </div>
                 </div>
               )}
+
+              {/* Retry / regenerate — only meaningful once a transcript exists
+                  and notes aren't already being generated. */}
+              {run?.transcriptText &&
+              notes?.status !== 'pending' &&
+              notes?.status !== 'running' ? (
+                <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={regenerating}
+                    onClick={() => handleRegenerateNotes(meeting.id)}
+                  >
+                    {regenerating
+                      ? 'Starting…'
+                      : notes?.status === 'failed'
+                        ? 'Retry notes'
+                        : notes
+                          ? 'Regenerate notes'
+                          : 'Generate notes'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Re-runs the AI summary from the transcript.
+                  </span>
+                </div>
+              ) : null}
+
+              {notesError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{notesError}</AlertDescription>
+                </Alert>
+              ) : null}
             </TabsContent>
 
             <TabsContent value="attendance" className="mt-4">

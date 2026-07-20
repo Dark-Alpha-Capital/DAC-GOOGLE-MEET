@@ -1,4 +1,5 @@
 import type {
+  GetObjectResult,
   NextcloudStorageConfig,
   PutObjectOptions,
   PutObjectResult,
@@ -145,6 +146,28 @@ export function createNextcloudStorage(
       }
 
       return { key: objectKey, url }
+    },
+
+    async get(key: string): Promise<GetObjectResult | null> {
+      const response = await fetch(davUrl(normalizeKey(key)), {
+        method: 'GET',
+        headers: { Authorization: auth },
+      })
+
+      if (response.status === 404) return null
+      if (!response.ok || !response.body) {
+        const text = await response.text().catch(() => '')
+        throw new Error(
+          `Nextcloud GET failed (${response.status}) for ${normalizeKey(key)}: ${text}`,
+        )
+      }
+
+      const length = response.headers.get('content-length')
+      return {
+        body: response.body,
+        contentType: response.headers.get('content-type'),
+        contentLength: length ? Number(length) : null,
+      }
     },
 
     async exists(key: string): Promise<boolean> {

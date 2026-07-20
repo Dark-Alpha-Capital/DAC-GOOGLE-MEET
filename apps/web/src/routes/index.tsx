@@ -402,20 +402,25 @@ function HomePage() {
             {removed > 0 ? ` · removed ${removed}` : ''} from Calendar
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            void authClient.signOut({
-              fetchOptions: {
-                onSuccess: () => {
-                  window.location.href = '/login'
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/search">Search</Link>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void authClient.signOut({
+                fetchOptions: {
+                  onSuccess: () => {
+                    window.location.href = '/login'
+                  },
                 },
-              },
-            })
-          }}
-        >
-          Sign out
-        </Button>
+              })
+            }}
+          >
+            Sign out
+          </Button>
+        </div>
       </div>
 
       <section>

@@ -1,4 +1,5 @@
 export type {
+  GetObjectResult,
   NextcloudStorageConfig,
   PutObjectOptions,
   PutObjectResult,
