@@ -20,12 +20,51 @@ function resolveChromePath() {
 
 const CHROME_PATH = resolveChromePath()
 
+const CHROME_LOCK_FILES = [
+  'SingletonLock',
+  'SingletonCookie',
+  'SingletonSocket',
+  '.org.chromium.Chromium.lockfile',
+] as const
+
 /** Prefer headed (Xvfb in Docker) — Meet often blocks pure headless. */
 function shouldRunHeaded() {
   if (process.env.BOT_HEADED === '1') return true
   if (process.env.BOT_HEADED === '0') return false
   if (process.env.DISPLAY) return true
   return process.platform === 'darwin' && !fs.existsSync('/.dockerenv')
+}
+
+/**
+ * Copy baked profile to /tmp and drop Singleton* locks.
+ * Image layers may be read-only or retain bootstrap locks (host/pid from build).
+ */
+function materializeChromeProfile(sourceDir: string, botRunId: string): string {
+  const dest = path.join('/tmp', `chrome-profile-${botRunId}`)
+  fs.rmSync(dest, { recursive: true, force: true })
+  fs.cpSync(sourceDir, dest, { recursive: true })
+  for (const name of CHROME_LOCK_FILES) {
+    try {
+      fs.unlinkSync(path.join(dest, name))
+    } catch {
+      // missing
+    }
+  }
+  try {
+    for (const ent of fs.readdirSync(dest)) {
+      if (ent.startsWith('Singleton')) {
+        try {
+          fs.unlinkSync(path.join(dest, ent))
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  log(`materialized chrome profile ${sourceDir} → ${dest} (locks cleared)`)
+  return dest
 }
 
 function log(...args: unknown[]) {
@@ -620,29 +659,16 @@ export class MeetGuestSession {
       log('attached to existing Chrome (no Puppeteer automation flags)')
     } else {
       const headed = shouldRunHeaded()
-      const signedInDir =
+      const bakedProfile =
         process.env.USE_CHROME_PROFILE === '1'
           ? process.env.BOT_USER_DATA_DIR
           : undefined
-      const userDataDir =
-        signedInDir || path.join('/tmp', 'meet-bot-guest-' + payload.botRunId)
+      const userDataDir = bakedProfile
+        ? materializeChromeProfile(bakedProfile, payload.botRunId)
+        : path.join('/tmp', 'meet-bot-guest-' + payload.botRunId)
 
-      if (!signedInDir) {
+      if (!bakedProfile) {
         fs.mkdirSync(userDataDir, { recursive: true })
-      } else {
-        // Baked profiles often retain Singleton* from bootstrap host → launch fails.
-        for (const name of [
-          'SingletonLock',
-          'SingletonCookie',
-          'SingletonSocket',
-          '.org.chromium.Chromium.lockfile',
-        ]) {
-          try {
-            fs.unlinkSync(path.join(userDataDir, name))
-          } catch {
-            // ignore missing
-          }
-        }
       }
 
       log(
@@ -651,7 +677,7 @@ export class MeetGuestSession {
           ' path=' +
           CHROME_PATH +
           ' guest=' +
-          !signedInDir +
+          !bakedProfile +
           ' userDataDir=' +
           userDataDir,
       )
@@ -670,7 +696,7 @@ export class MeetGuestSession {
             '--autoplay-policy=no-user-gesture-required',
             '--window-size=1280,720',
             '--user-data-dir=' + userDataDir,
-            ...(signedInDir
+            ...(bakedProfile
               ? [
                   '--profile-directory=' +
                     (process.env.BOT_PROFILE_DIRECTORY || 'Default'),

@@ -30,12 +30,9 @@ COOKIES_DB="$PROFILE_DIR/Network/Cookies"
 clear_chrome_locks() {
   dir="$1"
   [ -d "$dir" ] || return 0
-  rm -f \
-    "$dir/SingletonLock" \
-    "$dir/SingletonCookie" \
-    "$dir/SingletonSocket" \
-    "$dir/.org.chromium.Chromium.lockfile" \
-    2>/dev/null || true
+  # -f: Singleton* are often symlinks; ignore missing.
+  find "$dir" -maxdepth 1 \( -name 'Singleton*' -o -name '.org.chromium.Chromium.lockfile' \) -exec rm -f {} + 2>/dev/null || true
+  echo "[entrypoint] cleared Chromium profile locks under $dir"
 }
 
 if [ "$USE_CHROME_PROFILE" = "1" ]; then
