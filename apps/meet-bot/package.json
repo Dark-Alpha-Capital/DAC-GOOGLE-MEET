@@ -12,6 +12,7 @@
     "build": "bun build ./index.ts --outdir ./dist --target bun",
     "start": "bun run dist/index.js",
     "sync:chrome-profile": "bash scripts/sync-chrome-profile.sh",
+    "bootstrap:linux-profile": "bash scripts/bootstrap-linux-profile.sh",
     "docker:build": "docker build -t meet-bot .",
     "docker:run": "docker run --rm -p 8080:8080 meet-bot"
   },

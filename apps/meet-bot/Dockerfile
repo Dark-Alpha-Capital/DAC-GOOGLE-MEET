@@ -31,7 +31,7 @@ RUN bun install --production
 COPY index.ts ./
 COPY src ./src
 RUN bun run build
-# Populated by: bun run sync:chrome-profile (gitignored contents; keep dir present)
+# Populated by: bun run bootstrap:linux-profile (gitignored; Linux sign-in only)
 COPY chrome-user-data /data/chrome
 RUN chmod -R a+rwX /data/chrome
 COPY docker-entrypoint.sh /docker-entrypoint.sh

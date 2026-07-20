@@ -33,3 +33,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Signed-in Chromium profile for Meet bot (do not commit)
 bot-chrome-profile
 chrome-user-data
+chrome-user-data.*
