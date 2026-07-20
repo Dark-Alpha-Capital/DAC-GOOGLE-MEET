@@ -17,12 +17,23 @@ export type PutObjectResult = {
   url: string
 }
 
+export type GetObjectResult = {
+  /** Raw object bytes as a stream (suitable for piping into a Response). */
+  body: ReadableStream<Uint8Array>
+  /** Content-Type reported by the store, if any. */
+  contentType: string | null
+  /** Content-Length in bytes, if known. */
+  contentLength: number | null
+}
+
 export type StorageAdapter = {
   put(
     key: string,
     body: StorageBody,
     options?: PutObjectOptions,
   ): Promise<PutObjectResult>
+  /** Read an object. Returns null when the key does not exist. */
+  get(key: string): Promise<GetObjectResult | null>
   exists(key: string): Promise<boolean>
   delete(key: string): Promise<void>
 }

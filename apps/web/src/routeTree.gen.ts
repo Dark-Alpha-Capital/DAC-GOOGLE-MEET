@@ -9,14 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MeetingMeetingIdRouteImport } from './routes/meeting/$meetingId'
+import { Route as ApiRecordingBotRunIdRouteImport } from './routes/api/recording/$botRunId'
 import { Route as ApiBotStatusRouteImport } from './routes/api/bot/status'
 import { Route as ApiBotForceStopRouteImport } from './routes/api/bot/force-stop'
 import { Route as ApiBotCompleteRouteImport } from './routes/api/bot/complete'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -30,6 +37,11 @@ const IndexRoute = IndexRouteImport.update({
 const MeetingMeetingIdRoute = MeetingMeetingIdRouteImport.update({
   id: '/meeting/$meetingId',
   path: '/meeting/$meetingId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRecordingBotRunIdRoute = ApiRecordingBotRunIdRouteImport.update({
+  id: '/api/recording/$botRunId',
+  path: '/api/recording/$botRunId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiBotStatusRoute = ApiBotStatusRouteImport.update({
@@ -56,73 +68,94 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/search': typeof SearchRoute
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
   '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
+  '/api/recording/$botRunId': typeof ApiRecordingBotRunIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/search': typeof SearchRoute
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
   '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
+  '/api/recording/$botRunId': typeof ApiRecordingBotRunIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/search': typeof SearchRoute
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
   '/api/bot/force-stop': typeof ApiBotForceStopRoute
   '/api/bot/status': typeof ApiBotStatusRoute
+  '/api/recording/$botRunId': typeof ApiRecordingBotRunIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
+    | '/search'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
     | '/api/bot/force-stop'
     | '/api/bot/status'
+    | '/api/recording/$botRunId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
+    | '/search'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
     | '/api/bot/force-stop'
     | '/api/bot/status'
+    | '/api/recording/$botRunId'
   id:
     | '__root__'
     | '/'
     | '/login'
+    | '/search'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
     | '/api/bot/force-stop'
     | '/api/bot/status'
+    | '/api/recording/$botRunId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  SearchRoute: typeof SearchRoute
   MeetingMeetingIdRoute: typeof MeetingMeetingIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBotCompleteRoute: typeof ApiBotCompleteRoute
   ApiBotForceStopRoute: typeof ApiBotForceStopRoute
   ApiBotStatusRoute: typeof ApiBotStatusRoute
+  ApiRecordingBotRunIdRoute: typeof ApiRecordingBotRunIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -142,6 +175,13 @@ declare module '@tanstack/react-router' {
       path: '/meeting/$meetingId'
       fullPath: '/meeting/$meetingId'
       preLoaderRoute: typeof MeetingMeetingIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/recording/$botRunId': {
+      id: '/api/recording/$botRunId'
+      path: '/api/recording/$botRunId'
+      fullPath: '/api/recording/$botRunId'
+      preLoaderRoute: typeof ApiRecordingBotRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/bot/status': {
@@ -178,11 +218,13 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  SearchRoute: SearchRoute,
   MeetingMeetingIdRoute: MeetingMeetingIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBotCompleteRoute: ApiBotCompleteRoute,
   ApiBotForceStopRoute: ApiBotForceStopRoute,
   ApiBotStatusRoute: ApiBotStatusRoute,
+  ApiRecordingBotRunIdRoute: ApiRecordingBotRunIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
