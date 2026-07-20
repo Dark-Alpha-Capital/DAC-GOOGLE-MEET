@@ -120,6 +120,32 @@ export function canScheduleBot(item: MeetingWithParticipants) {
   return true
 }
 
+export type MeetingBotCategory =
+  | 'not_scheduled'
+  | 'scheduled'
+  | 'in_call'
+  | 'completed'
+  | 'failed'
+
+export function getMeetingBotCategory(
+  item: MeetingWithParticipants,
+): MeetingBotCategory {
+  const run = item.latestBotRun
+  if (
+    run?.status === 'joined' ||
+    run?.status === 'joining' ||
+    run?.status === 'waiting_admission'
+  ) {
+    return 'in_call'
+  }
+  if (run?.status === 'left') return 'completed'
+  if (run?.status === 'failed' || item.workflowStatus === 'errored') {
+    return 'failed'
+  }
+  if (isBotScheduled(item)) return 'scheduled'
+  return 'not_scheduled'
+}
+
 type MeetingsTableMeta = {
   schedulingId: string | null
   stoppingId: string | null

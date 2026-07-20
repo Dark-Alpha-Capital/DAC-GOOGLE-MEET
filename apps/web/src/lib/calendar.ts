@@ -293,17 +293,96 @@ export const syncMeetingsFromCalendar = createServerFn({
   return { synced, removed }
 })
 
+type MeetingRowWithRelations = {
+  id: string
+  googleEventId: string
+  title: string
+  meetLink: string | null
+  startsAt: Date
+  endsAt: Date
+  status: string
+  htmlLink: string | null
+  workflowInstanceId: string | null
+  participants: Array<{
+    email: string
+    displayName: string | null
+    responseStatus: string | null
+  }>
+  botRuns: Array<{
+    id: string
+    status: string
+    joinedAt: Date | null
+    leftAt: Date | null
+    recordingKey: string | null
+    transcriptKey: string | null
+    transcriptText: string | null
+    errorMessage: string | null
+    createdAt: Date
+  }>
+}
+
+async function toMeeting(
+  row: MeetingRowWithRelations,
+): Promise<MeetingWithParticipants> {
+  const wf = await getWorkflowStatus(row.workflowInstanceId)
+  const wakeMs = Math.max(Date.now(), row.startsAt.getTime() - 5 * 60 * 1000)
+  const latest =
+    row.botRuns.find((r) => r.status === 'left') ??
+    row.botRuns.find((r) => r.status === 'joined') ??
+    row.botRuns[0] ??
+    null
+  return {
+    id: row.id,
+    googleEventId: row.googleEventId,
+    title: row.title,
+    meetLink: row.meetLink,
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
+    status: row.status,
+    htmlLink: row.htmlLink,
+    workflowInstanceId: row.workflowInstanceId,
+    workflowStatus: wf?.status ?? null,
+    workflowError: formatWorkflowError(wf?.error),
+    botWakeAt:
+      row.status === 'scheduled' ? new Date(wakeMs).toISOString() : null,
+    latestBotRun: latest
+      ? {
+          id: latest.id,
+          status: latest.status,
+          joinedAt: latest.joinedAt,
+          leftAt: latest.leftAt,
+          recordingKey: latest.recordingKey,
+          transcriptKey: latest.transcriptKey,
+          transcriptText: latest.transcriptText,
+          errorMessage: latest.errorMessage,
+          createdAt: latest.createdAt,
+        }
+      : null,
+    participants: row.participants.map((p) => ({
+      email: p.email,
+      displayName: p.displayName,
+      responseStatus: p.responseStatus,
+    })),
+  }
+}
+
+const meetingRelations = {
+  participants: true,
+  botRuns: {
+    orderBy: [desc(botRun.createdAt)],
+  },
+} as const
+
 export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
   async (): Promise<{
     meetings: MeetingWithParticipants[]
-    recent: MeetingWithParticipants[]
     error?: string
   }> => {
     const headers = getRequestHeaders()
     const auth = getAuth()
     const session = await auth.api.getSession({ headers })
     if (!session) {
-      return { meetings: [], recent: [], error: 'Not signed in' }
+      return { meetings: [], error: 'Not signed in' }
     }
 
     // Window for day-by-day UI (prev/next day navigation).
@@ -322,82 +401,37 @@ export const getStoredMeetings = createServerFn({ method: 'GET' }).handler(
         inArray(meeting.status, ['scheduled', 'completed', 'cancelled']),
       ),
       orderBy: [asc(meeting.startsAt)],
-      with: {
-        participants: true,
-        botRuns: {
-          orderBy: [desc(botRun.createdAt)],
-        },
-      },
+      with: meetingRelations,
     })
 
-    const recentRows = await getDb().query.meeting.findMany({
+    const meetings = await Promise.all(rows.map(toMeeting))
+    return { meetings }
+  },
+)
+
+export const getBotHistory = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<{
+    meetings: MeetingWithParticipants[]
+    error?: string
+  }> => {
+    const headers = getRequestHeaders()
+    const auth = getAuth()
+    const session = await auth.api.getSession({ headers })
+    if (!session) {
+      return { meetings: [], error: 'Not signed in' }
+    }
+
+    const rows = await getDb().query.meeting.findMany({
       where: and(
         eq(meeting.userId, session.user.id),
         inArray(meeting.status, ['completed', 'cancelled']),
       ),
       orderBy: [desc(meeting.updatedAt)],
-      limit: 20,
-      with: {
-        participants: true,
-        botRuns: {
-          orderBy: [desc(botRun.createdAt)],
-        },
-      },
+      limit: 50,
+      with: meetingRelations,
     })
 
-    async function toMeeting(
-      row: (typeof rows)[number],
-    ): Promise<MeetingWithParticipants> {
-      const wf = await getWorkflowStatus(row.workflowInstanceId)
-      const wakeMs = Math.max(
-        Date.now(),
-        row.startsAt.getTime() - 5 * 60 * 1000,
-      )
-      const latest =
-        row.botRuns.find((r) => r.status === 'left') ??
-        row.botRuns.find((r) => r.status === 'joined') ??
-        row.botRuns[0] ??
-        null
-      return {
-        id: row.id,
-        googleEventId: row.googleEventId,
-        title: row.title,
-        meetLink: row.meetLink,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
-        status: row.status,
-        htmlLink: row.htmlLink,
-        workflowInstanceId: row.workflowInstanceId,
-        workflowStatus: wf?.status ?? null,
-        workflowError: formatWorkflowError(wf?.error),
-        botWakeAt:
-          row.status === 'scheduled'
-            ? new Date(wakeMs).toISOString()
-            : null,
-        latestBotRun: latest
-          ? {
-              id: latest.id,
-              status: latest.status,
-              joinedAt: latest.joinedAt,
-              leftAt: latest.leftAt,
-              recordingKey: latest.recordingKey,
-              transcriptKey: latest.transcriptKey,
-              transcriptText: latest.transcriptText,
-              errorMessage: latest.errorMessage,
-              createdAt: latest.createdAt,
-            }
-          : null,
-        participants: row.participants.map((p) => ({
-          email: p.email,
-          displayName: p.displayName,
-          responseStatus: p.responseStatus,
-        })),
-      }
-    }
-
     const meetings = await Promise.all(rows.map(toMeeting))
-    const recent = await Promise.all(recentRows.map(toMeeting))
-
-    return { meetings, recent }
+    return { meetings }
   },
 )

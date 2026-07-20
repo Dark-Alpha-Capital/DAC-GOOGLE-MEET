@@ -68,7 +68,9 @@
   "workers_dev": true,
   "observability": {
     "enabled": true,
+    "head_sampling_rate": 1,
   },
+
   // Skip Docker image builds during vite/wrangler local dev (use `bun run dev:containers` to enable).
   "dev": {
     "enable_containers": false,

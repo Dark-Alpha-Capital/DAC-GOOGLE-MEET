@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppHistoryRouteImport } from './routes/_app/history'
 import { Route as ApiBotStatusRouteImport } from './routes/api/bot/status'
 import { Route as ApiBotForceStopRouteImport } from './routes/api/bot/force-stop'
 import { Route as ApiBotCompleteRouteImport } from './routes/api/bot/complete'
@@ -30,6 +31,11 @@ const AppRoute = AppRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppHistoryRoute = AppHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => AppRoute,
 } as any)
 const ApiBotStatusRoute = ApiBotStatusRouteImport.update({
@@ -61,6 +67,7 @@ const AppMeetingMeetingIdRoute = AppMeetingMeetingIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/history': typeof AppHistoryRoute
   '/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/history': typeof AppHistoryRoute
   '/': typeof AppIndexRoute
   '/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/history': typeof AppHistoryRoute
   '/_app/': typeof AppIndexRoute
   '/_app/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -92,6 +101,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/history'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/history'
     | '/'
     | '/meeting/$meetingId'
     | '/api/auth/$'
@@ -110,6 +121,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/history'
     | '/_app/'
     | '/_app/meeting/$meetingId'
     | '/api/auth/$'
@@ -148,6 +160,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/history': {
+      id: '/_app/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof AppHistoryRouteImport
       parentRoute: typeof AppRoute
     }
     '/api/bot/status': {
@@ -189,11 +208,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppHistoryRoute: typeof AppHistoryRoute
   AppIndexRoute: typeof AppIndexRoute
   AppMeetingMeetingIdRoute: typeof AppMeetingMeetingIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppHistoryRoute: AppHistoryRoute,
   AppIndexRoute: AppIndexRoute,
   AppMeetingMeetingIdRoute: AppMeetingMeetingIdRoute,
 }

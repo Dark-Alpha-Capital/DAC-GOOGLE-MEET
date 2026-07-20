@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { MeetGuestSession } from './src/meet-session.ts'
 import { AudioRecorder } from './src/recorder.ts'
 import type { BotStatus, JoinPayload } from './src/types.ts'
@@ -15,9 +16,13 @@ function logError(...args: unknown[]) {
 
 function assertBotAuth(req: Request): Response | null {
   if (!BOT_SECRET) return null
-  const secret = req.headers.get('x-bot-secret')
-  if (secret === BOT_SECRET) return null
-  return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  const provided = req.headers.get('x-bot-secret') ?? ''
+  const a = Buffer.from(provided)
+  const b = Buffer.from(BOT_SECRET)
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  return null
 }
 
 let status: BotStatus = {

@@ -10,25 +10,9 @@ import {
   recordAttendance,
   type MeetingAttendee,
 } from '#/lib/attendance'
+import { isValidBotSecret, unauthorizedBot } from '#/lib/bot-auth'
 import { getStorage } from '#/lib/storage'
 import type { RecordingDonePayload } from '#/workflows/meeting-bot'
-
-function unauthorized() {
-  return Response.json({ error: 'Unauthorized' }, { status: 401 })
-}
-
-function assertBotSecret(request: Request) {
-  const secret = request.headers.get('x-bot-secret')
-  const expected = env.BOT_INTERNAL_SECRET
-  if (!expected || !secret) return false
-  if (secret.length !== expected.length) return false
-  // Constant-time-ish compare (avoids trivial early-exit leaks).
-  let mismatch = 0
-  for (let i = 0; i < expected.length; i++) {
-    mismatch |= secret.charCodeAt(i) ^ expected.charCodeAt(i)
-  }
-  return mismatch === 0
-}
 
 function slugify(value: string) {
   const slug = value
@@ -110,7 +94,9 @@ export const Route = createFileRoute('/api/bot/complete')({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!assertBotSecret(request)) return unauthorized()
+        if (!isValidBotSecret(request, env.BOT_INTERNAL_SECRET)) {
+          return unauthorizedBot()
+        }
 
         const form = await request.formData()
         const botRunId = String(form.get('botRunId') ?? '')

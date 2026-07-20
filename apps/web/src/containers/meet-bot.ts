@@ -1,38 +1,62 @@
-import { Container } from '@cloudflare/containers'
-import { env } from 'cloudflare:workers'
+import { Container, type StopParams } from '@cloudflare/containers'
+
+const ACTIVE_STATES = new Set([
+  'joining',
+  'waiting_admission',
+  'joined',
+  'recording',
+  'leaving',
+])
 
 /**
- * One Chromium Meet bot per meeting id (`getContainer(env.MEET_BOT_CONTAINER, meetingId)`).
+ * One Chromium Meet bot per meeting id:
+ * `getContainer(env.MEET_BOT_CONTAINER, meetingId)`.
+ *
+ * Image defaults (BOT_HEADED, PulseAudio, Chrome profile) live in the Dockerfile.
+ * Secrets are passed at start via `startAndWaitForPorts({ startOptions.envVars })`.
  */
 export class MeetBotContainer extends Container {
   defaultPort = 8080
+  requiredPorts = [8080]
+  /** Renewed while a join/recording session is active (see onActivityExpired). */
   sleepAfter = '15m'
   enableInternet = true
   pingEndpoint = '/health'
-  envVars = {
-    BOT_HEADED: '1',
-    /** Use baked Chromium profile at /data/chrome (roghankundra session). */
-    USE_CHROME_PROFILE: '1',
-    BOT_USER_DATA_DIR: '/data/chrome',
-    BOT_PROFILE_DIRECTORY: 'Default',
-    /** Docker has PulseAudio meet_sink — not browser MediaRecorder. */
-    BOT_RECORD_MODE: 'ffmpeg',
-    PULSE_SINK: 'meet_sink',
-    /** Optional; when set, meet-bot requires x-bot-secret on /join and /stop. */
-    BOT_INTERNAL_SECRET: env.BOT_INTERNAL_SECRET ?? '',
+
+  override onStart(): void {
+    console.log(
+      JSON.stringify({ msg: 'meet-bot container started', id: this.ctx.id.toString() }),
+    )
+  }
+
+  override onStop(params: StopParams): void {
+    console.log(
+      JSON.stringify({
+        msg: 'meet-bot container stopped',
+        id: this.ctx.id.toString(),
+        exitCode: params.exitCode,
+        reason: params.reason,
+      }),
+    )
+  }
+
+  override onError(error: unknown): void {
+    console.error(
+      JSON.stringify({
+        msg: 'meet-bot container error',
+        id: this.ctx.id.toString(),
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    )
+    throw error
   }
 
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    // Explicit stop from the Worker: ask the bot to leave, then kill the container.
+    // Explicit stop: ask the bot to leave, then shut down the VM.
     if (request.method === 'POST' && url.pathname === '/stop') {
       try {
-        await this.containerFetch(
-          new Request('http://container/stop', {
-            method: 'POST',
-            headers: request.headers,
-          }),
-        )
+        await this.containerFetch(request)
       } catch (error) {
         console.error('[MeetBotContainer] bot /stop failed', error)
       }
@@ -40,39 +64,26 @@ export class MeetBotContainer extends Container {
         await this.stop()
       } catch (error) {
         console.error('[MeetBotContainer] container stop failed', error)
-        try {
-          await this.destroy()
-        } catch {
-          // ignore
-        }
+        await this.destroy().catch(() => undefined)
       }
       return Response.json({ stopped: true })
     }
 
-    return this.containerFetch(request)
+    return super.fetch(request)
   }
 
   override async onActivityExpired(): Promise<void> {
-    // Stop idle/finished bots so instances don't live forever.
-    // Renew only while an active join/recording session is in progress.
     try {
       const response = await this.containerFetch(
         new Request('http://container/status'),
       )
       const body = (await response.json()) as { state?: string }
-      const state = body.state ?? 'idle'
-      if (
-        state === 'joining' ||
-        state === 'waiting_admission' ||
-        state === 'joined' ||
-        state === 'recording' ||
-        state === 'leaving'
-      ) {
+      if (ACTIVE_STATES.has(body.state ?? 'idle')) {
         this.renewActivityTimeout()
         return
       }
     } catch {
-      // If status is unreachable, shut down.
+      // Status unreachable — shut down.
     }
     await this.stop()
   }

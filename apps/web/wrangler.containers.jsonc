@@ -61,7 +61,8 @@
 	// Custom domain requires darkalphacapital.com on this Cloudflare account.
 	"workers_dev": true,
 	"observability": {
-		"enabled": true
+		"enabled": true,
+		"head_sampling_rate": 1
 	},
 	"dev": {
 		"enable_containers": true
