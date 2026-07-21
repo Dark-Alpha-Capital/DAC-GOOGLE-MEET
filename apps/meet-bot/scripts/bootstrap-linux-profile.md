@@ -1,40 +1,36 @@
 # Bot Chrome profile for Cloudflare Containers
 
-## Security model (read this)
+## Critical rule
 
-Baking a signed-in Chromium profile into the container image is the **practical MVP** on Cloudflare Containers (no durable disk per instance). It is **not** zero-risk:
+Sign in with the **meet-bot Dockerfile Chromium on `linux/amd64`** — the same binary Cloudflare runs.
 
-- The image contains Google session cookies for the bot Gmail.
-- Anyone who can pull the image (account members, CI) can extract that session.
-- Prefer a **dedicated** bot mailbox, not a personal inbox.
-- Never commit `chrome-user-data/` (gitignored).
-- Cloudflare’s container registry is account-private — do not push this image to a public registry.
+Sessions from `linuxserver/chromium` or Mac Chrome **will not stay signed in** on Cloudflare (cookie encryption / Chromium mismatch).
 
-## Why not copy macOS Chrome?
+Also required: `Local State` must contain `os_crypt.encrypted_key`. Cookies alone are not enough — without the key, CF Chromium cannot decrypt SID and looks signed out.
 
-Mac→Linux profile copies lose login (Keychain / cookie encryption).  
-`bun run sync:chrome-profile` is **local experiments only** — not for Cloudflare.
+# India: sign-in often stores SID on `.google.co.in` only. Meet needs a **real**
+# `.google.com` session. Always bootstrap via **https://www.google.com/ncr** and
+# confirm myaccount shows your email. Cookie cloning cannot fix Google 401s.
 
-## Bootstrap (fast — no meet-bot Docker build)
+## Bootstrap
 
 ```bash
 cd apps/meet-bot
 bun run bootstrap:linux-profile
 ```
 
-This **pulls** `lscr.io/linuxserver/chromium` (`linux/amd64`) and opens a web UI — it does **not** apt-install Chromium into `meet-bot` (that 20+ min build is only needed on deploy).
-
-1. Open **http://127.0.0.1:3000**
-2. Sign in as the bot Gmail → open Meet once
-3. Press Enter in the terminal when done
-4. Deploy (Dockerfile `COPY chrome-user-data /data/chrome`):
+1. Open **http://127.0.0.1:3000/vnc.html** (password `meetbot`)
+2. Sign in as the bot Gmail → open Meet + myaccount.google.com
+3. **Quit Chromium** (File → Quit) so cookies flush to disk
+4. Press Enter — script checks SID/OSID cookies (not headless dump-dom)
+5. Deploy:
 
 ```bash
 cd ../web && bun run deploy:containers
 ```
 
-First `deploy:containers` still installs Chromium in the meet-bot image (slow once; then Docker/Wrangler cache helps). Bootstrap itself should only take as long as the image pull + sign-in.
+`deploy:containers` stamps the profile so Docker does not reuse a stale `COPY chrome-user-data` layer.
 
-## Verify
+## Verify in Cloudflare logs
 
-Join logs should show `guest=false` / `userDataDir=/data/chrome` and must **not** say the profile is not signed in.
+After join, look for `roghankundra@…` (or your bot email) in the Google account preview — **not** a bare “Sign in” landing page.

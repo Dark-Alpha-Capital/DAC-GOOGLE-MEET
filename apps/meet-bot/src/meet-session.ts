@@ -71,43 +71,67 @@ function log(...args: unknown[]) {
   console.log(`[meet ${new Date().toISOString()}]`, ...args)
 }
 
+function isDetachedFrameError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    message.includes('detached Frame') ||
+    message.includes('Execution context was destroyed') ||
+    message.includes('Cannot find context with specified id') ||
+    message.includes('Target closed')
+  )
+}
+
 async function clickByText(page: Page, texts: string[]) {
+  if (page.isClosed()) return null
   const lowered = texts.map((t) => t.toLowerCase())
-  return page.evaluate((needles) => {
-    const selector =
-      'button, div[role="button"], span[role="button"], a[role="button"], [aria-label]'
-    const nodes = Array.from(document.querySelectorAll(selector))
+  try {
+    return await page.evaluate((needles) => {
+      const selector =
+        'button, div[role="button"], span[role="button"], a[role="button"], [aria-label]'
+      const nodes = Array.from(document.querySelectorAll(selector))
 
-    type Cand = { el: HTMLElement; label: string; exact: boolean; score: number }
-    const candidates: Cand[] = []
-
-    for (const node of nodes) {
-      const el = node as HTMLElement
-      const aria = (el.getAttribute('aria-label') || '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase()
-      const text = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
-      const label = aria || text
-      if (!label || label.length > 120) continue
-
-      for (let i = 0; i < needles.length; i++) {
-        const needle = needles[i]!
-        const exact = label === needle
-        const fuzzy = !exact && label.includes(needle)
-        if (!exact && !fuzzy) continue
-        // Prefer exact, earlier needles, shorter labels
-        const score = (exact ? 0 : 1000) + i * 10 + label.length
-        candidates.push({ el, label, exact, score })
+      type Cand = {
+        el: HTMLElement
+        label: string
+        exact: boolean
+        score: number
       }
-    }
+      const candidates: Cand[] = []
 
-    candidates.sort((a, b) => a.score - b.score)
-    const best = candidates[0]
-    if (!best) return null
-    best.el.click()
-    return best.label
-  }, lowered)
+      for (const node of nodes) {
+        const el = node as HTMLElement
+        const aria = (el.getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase()
+        const text = (el.textContent || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase()
+        const label = aria || text
+        if (!label || label.length > 120) continue
+
+        for (let i = 0; i < needles.length; i++) {
+          const needle = needles[i]!
+          const exact = label === needle
+          const fuzzy = !exact && label.includes(needle)
+          if (!exact && !fuzzy) continue
+          // Prefer exact, earlier needles, shorter labels
+          const score = (exact ? 0 : 1000) + i * 10 + label.length
+          candidates.push({ el, label, exact, score })
+        }
+      }
+
+      candidates.sort((a, b) => a.score - b.score)
+      const best = candidates[0]
+      if (!best) return null
+      best.el.click()
+      return best.label
+    }, lowered)
+  } catch (error) {
+    if (isDetachedFrameError(error)) return null
+    throw error
+  }
 }
 
 async function waitAndClick(
@@ -117,6 +141,7 @@ async function waitAndClick(
   delayMs = 1000,
 ) {
   for (let i = 0; i < attempts; i++) {
+    if (page.isClosed()) return false
     const clicked = await clickByText(page, texts)
     if (clicked) {
       log(`clicked: "${clicked}"`)
@@ -214,44 +239,51 @@ async function continueWithoutMedia(page: Page) {
 
 /** Prefer a dedicated Ask/Join click — Meet often puts the label on nested spans. */
 async function clickAskToJoinButton(page: Page): Promise<string | null> {
-  const viaDom = await page.evaluate(() => {
-    const needles = [
-      'ask to join',
-      'request to join',
-      'join now',
-      'join meeting',
-    ]
-    const nodes = Array.from(
-      document.querySelectorAll(
-        'button, div[role="button"], span[role="button"], a[role="button"]',
-      ),
-    )
-    const scored: Array<{ el: HTMLElement; label: string; score: number }> = []
-    for (const node of nodes) {
-      const el = node as HTMLElement
-      const aria = (el.getAttribute('aria-label') || '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase()
-      const text = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
-      for (let i = 0; i < needles.length; i++) {
-        const needle = needles[i]!
-        if (aria === needle || text === needle) {
-          scored.push({ el, label: aria || text, score: i })
-        } else if (aria.includes(needle) || text === needle) {
-          scored.push({ el, label: aria || text, score: 100 + i })
-        } else if (text.includes(needle) && text.length < 40) {
-          scored.push({ el, label: text, score: 200 + i })
+  if (page.isClosed()) return null
+  let viaDom: string | null = null
+  try {
+    viaDom = await page.evaluate(() => {
+      const needles = [
+        'ask to join',
+        'request to join',
+        'join now',
+        'join meeting',
+      ]
+      const nodes = Array.from(
+        document.querySelectorAll(
+          'button, div[role="button"], span[role="button"], a[role="button"]',
+        ),
+      )
+      const scored: Array<{ el: HTMLElement; label: string; score: number }> = []
+      for (const node of nodes) {
+        const el = node as HTMLElement
+        const aria = (el.getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase()
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
+        for (let i = 0; i < needles.length; i++) {
+          const needle = needles[i]!
+          if (aria === needle || text === needle) {
+            scored.push({ el, label: aria || text, score: i })
+          } else if (aria.includes(needle) || text === needle) {
+            scored.push({ el, label: aria || text, score: 100 + i })
+          } else if (text.includes(needle) && text.length < 40) {
+            scored.push({ el, label: text, score: 200 + i })
+          }
         }
       }
-    }
-    scored.sort((a, b) => a.score - b.score)
-    const best = scored[0]
-    if (!best) return null
-    best.el.scrollIntoView({ block: 'center', inline: 'center' })
-    best.el.click()
-    return best.label
-  })
+      scored.sort((a, b) => a.score - b.score)
+      const best = scored[0]
+      if (!best) return null
+      best.el.scrollIntoView({ block: 'center', inline: 'center' })
+      best.el.click()
+      return best.label
+    })
+  } catch (error) {
+    if (isDetachedFrameError(error)) return null
+    throw error
+  }
   if (viaDom) return viaDom
 
   // Puppeteer click by exact visible label (handles some Material buttons)
@@ -261,27 +293,33 @@ async function clickAskToJoinButton(page: Page): Promise<string | null> {
     'Join now',
     'Join meeting',
   ]) {
-    const found = await page.evaluate((n) => {
-      const match = Array.from(
-        document.querySelectorAll(
-          'button, div[role="button"], span[role="button"]',
-        ),
-      ).find((node) => {
-        const el = node as HTMLElement
-        const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
-        const a = (el.getAttribute('aria-label') || '').trim()
-        return t === n || a === n
-      }) as HTMLElement | undefined
-      if (!match) return null
-      const rect = match.getBoundingClientRect()
-      match.scrollIntoView({ block: 'center', inline: 'center' })
-      match.click()
-      return {
-        label: n.toLowerCase(),
-        x: rect.x + rect.width / 2,
-        y: rect.y + rect.height / 2,
-      }
-    }, name)
+    let found: { label: string; x: number; y: number } | null = null
+    try {
+      found = await page.evaluate((n) => {
+        const match = Array.from(
+          document.querySelectorAll(
+            'button, div[role="button"], span[role="button"]',
+          ),
+        ).find((node) => {
+          const el = node as HTMLElement
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+          const a = (el.getAttribute('aria-label') || '').trim()
+          return t === n || a === n
+        }) as HTMLElement | undefined
+        if (!match) return null
+        const rect = match.getBoundingClientRect()
+        match.scrollIntoView({ block: 'center', inline: 'center' })
+        match.click()
+        return {
+          label: n.toLowerCase(),
+          x: rect.x + rect.width / 2,
+          y: rect.y + rect.height / 2,
+        }
+      }, name)
+    } catch (error) {
+      if (isDetachedFrameError(error)) return null
+      throw error
+    }
     if (found) {
       try {
         await page.mouse.click(found.x, found.y)
@@ -296,32 +334,43 @@ async function clickAskToJoinButton(page: Page): Promise<string | null> {
 
 async function askToJoin(page: Page) {
   for (let i = 0; i < 30; i++) {
-    // Lobby or live call — stop trying to click Ask
-    if (await isWaitingForHost(page)) {
-      log('in lobby — Ask to join already submitted')
-      return
+    if (page.isClosed()) {
+      throw new Error('Meet page closed during Ask to join')
     }
-    if (await isInMeeting(page)) {
-      log('already in live meeting')
-      return
-    }
-
-    await continueWithoutMedia(page)
-
-    const clicked = await clickAskToJoinButton(page)
-    if (clicked) {
-      log(`clicked Ask/Join: "${clicked}"`)
-      await Bun.sleep(1200)
-      await continueWithoutMedia(page)
-      if (
-        (await isWaitingForHost(page)) ||
-        (await isInMeeting(page)) ||
-        !(await isPreJoin(page))
-      ) {
+    try {
+      // Lobby or live call — stop trying to click Ask
+      if (await isWaitingForHost(page)) {
+        log('in lobby — Ask to join already submitted')
         return
       }
-    } else {
-      log(`Ask to join not found yet (attempt ${i + 1}/30)`)
+      if (await isInMeeting(page)) {
+        log('already in live meeting')
+        return
+      }
+
+      await continueWithoutMedia(page)
+
+      const clicked = await clickAskToJoinButton(page)
+      if (clicked) {
+        log(`clicked Ask/Join: "${clicked}"`)
+        await Bun.sleep(1200)
+        await continueWithoutMedia(page)
+        if (
+          (await isWaitingForHost(page)) ||
+          (await isInMeeting(page)) ||
+          !(await isPreJoin(page))
+        ) {
+          return
+        }
+      } else {
+        log(`Ask to join not found yet (attempt ${i + 1}/30)`)
+      }
+    } catch (error) {
+      // Meet often navigates right after Ask/Join and detaches the frame mid-evaluate.
+      if (!isDetachedFrameError(error)) throw error
+      log('Ask to join hit detached frame — waiting for navigation', error)
+      await Bun.sleep(1500)
+      continue
     }
     await Bun.sleep(1000)
   }
@@ -694,6 +743,8 @@ export class MeetGuestSession {
             '--disable-blink-features=AutomationControlled',
             '--use-fake-ui-for-media-stream',
             '--autoplay-policy=no-user-gesture-required',
+            // Must match bootstrap: cookies encrypted with peanuts / basic store.
+            '--password-store=basic',
             '--window-size=1280,720',
             '--user-data-dir=' + userDataDir,
             ...(bakedProfile
@@ -738,18 +789,54 @@ export class MeetGuestSession {
         timeout: 60_000,
       })
       await Bun.sleep(1500)
+      const accountUrl = this.page.url()
       const accountPreview = await this.page.evaluate(
         () => (document.body?.innerText || '').slice(0, 400),
       )
+      log('Google account url=' + accountUrl)
       log('Google account page preview:\n' + accountPreview)
-      if (
-        accountPreview.toLowerCase().includes('sign in') &&
-        !accountPreview.toLowerCase().includes('@')
-      ) {
+
+      // Cookie decrypt works ⇒ Chromium exposes SID. Marketing "about" pages also say "Sign in".
+      const authCookies = await this.page.cookies(
+        'https://www.google.com',
+        'https://myaccount.google.com',
+        'https://accounts.google.com',
+        'https://meet.google.com',
+      )
+      const criticalNames = ['SID', '__Secure-1PSID', '__Secure-3PSID']
+      const hasSid = authCookies.some((c) => criticalNames.includes(c.name))
+      const visible = authCookies
+        .filter((c) =>
+          [...criticalNames, 'OSID', 'HSID', 'SSID'].includes(c.name),
+        )
+        .map((c) => `${c.name}@${c.domain}`)
+        .join(',')
+      log('auth cookies visible to Chromium: ' + (visible || 'none'))
+
+      const lower = accountPreview.toLowerCase()
+      const onMarketingAbout =
+        accountUrl.includes('account/about') ||
+        accountUrl.includes('/signin') ||
+        accountUrl.includes('ServiceLogin')
+      // Marketing landing copy (seen when SID decrypts but Google rejects session):
+      // "Sign in to your Google Account" / "Go to Google Account" / "All of Google"
+      const signedOutUi =
+        onMarketingAbout ||
+        lower.includes('go to google account') ||
+        lower.includes('sign in to your google account') ||
+        (lower.includes('all of google') && lower.includes('sign in')) ||
+        (lower.includes('create an account') &&
+          lower.includes('sign in') &&
+          !lower.includes('@'))
+
+      // SID present ≠ Google accepts the session. Cloned .co.in→.com cookies decrypt
+      // but get 401 from Google APIs; Meet then shows guest "Sign in" + name field.
+      if (!hasSid || signedOutUi) {
         throw new Error(
-          'Chrome profile is not signed in to Google. ' +
-            'Mac→Linux profile copies usually lose the session. ' +
-            'Bootstrap a Linux login inside the image — see apps/meet-bot/scripts/bootstrap-linux-profile.md — then redeploy containers.',
+          'Chrome profile is not signed in to Google (session rejected). ' +
+            'Do NOT rely on .co.in cookie cloning. Re-bootstrap on amd64: ' +
+            'open https://www.google.com/ncr → sign in → myaccount.google.com must show your email ' +
+            '(not account/about) → quit Chromium → deploy:containers.',
         )
       }
     } catch (error) {
@@ -802,6 +889,21 @@ export class MeetGuestSession {
       }
       log('landed url=' + url + ' title=' + title)
       log('page text preview:\n' + preview)
+
+      const previewLower = preview.toLowerCase()
+      const meetShowsGuestSignIn =
+        previewLower.includes('sign in') &&
+        (previewLower.includes('getting ready') ||
+          previewLower.includes("you'll be able to join") ||
+          previewLower.includes('ask to join'))
+      if (meetShowsGuestSignIn) {
+        await dumpDebug(this.page, 'meet-guest-not-signed-in')
+        throw new Error(
+          'Meet is treating the bot as a guest (Sign in visible). ' +
+            'Inviting the bot Gmail does nothing until Chromium is actually signed in. ' +
+            'Re-bootstrap via https://www.google.com/ncr until myaccount shows the email.',
+        )
+      }
 
       const blocked = await isBlockedFromMeeting(this.page)
       if (blocked) {

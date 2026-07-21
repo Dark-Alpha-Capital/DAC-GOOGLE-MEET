@@ -32,10 +32,12 @@ COPY index.ts ./
 COPY src ./src
 RUN bun run build
 # Populated by: bun run bootstrap:linux-profile (gitignored; Linux sign-in only)
+# .bake-stamp is written by deploy:containers so profile cookie updates bust this layer.
 COPY chrome-user-data /data/chrome
 # Drop bootstrap Singleton* so Cloudflare instances can launch Chromium.
 RUN rm -f /data/chrome/SingletonLock /data/chrome/SingletonCookie \
       /data/chrome/SingletonSocket /data/chrome/.org.chromium.Chromium.lockfile \
+      /data/chrome/.bake-stamp \
   && chmod -R a+rwX /data/chrome
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
