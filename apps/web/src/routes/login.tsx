@@ -27,8 +27,7 @@ function LoginPage() {
               Welcome to the Meeting Board
             </h1>
             <p className="text-sm text-muted-foreground">
-              Sign in with Google to manage Meet bots, transcripts, and
-              attendance.
+              Sign in with Google to view Meet attendance for your calls.
             </p>
           </div>
 

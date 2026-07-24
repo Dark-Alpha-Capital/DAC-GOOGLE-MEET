@@ -13,12 +13,13 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppHistoryRouteImport } from './routes/_app/history'
-import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
+import { Route as AppBotBoardRouteImport } from './routes/_app/bot-board'
 import { Route as ApiBotStatusRouteImport } from './routes/api/bot/status'
 import { Route as ApiBotForceStopRouteImport } from './routes/api/bot/force-stop'
 import { Route as ApiBotCompleteRouteImport } from './routes/api/bot/complete'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppMeetingMeetingIdRouteImport } from './routes/_app/meeting/$meetingId'
+import { Route as AppAttendanceConferenceIdRouteImport } from './routes/_app/attendance/$conferenceId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -39,9 +40,9 @@ const AppHistoryRoute = AppHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAttendanceRoute = AppAttendanceRouteImport.update({
-  id: '/attendance',
-  path: '/attendance',
+const AppBotBoardRoute = AppBotBoardRouteImport.update({
+  id: '/bot-board',
+  path: '/bot-board',
   getParentRoute: () => AppRoute,
 } as any)
 const ApiBotStatusRoute = ApiBotStatusRouteImport.update({
@@ -69,12 +70,19 @@ const AppMeetingMeetingIdRoute = AppMeetingMeetingIdRouteImport.update({
   path: '/meeting/$meetingId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAttendanceConferenceIdRoute =
+  AppAttendanceConferenceIdRouteImport.update({
+    id: '/attendance/$conferenceId',
+    path: '/attendance/$conferenceId',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
-  '/attendance': typeof AppAttendanceRoute
+  '/bot-board': typeof AppBotBoardRoute
   '/history': typeof AppHistoryRoute
+  '/attendance/$conferenceId': typeof AppAttendanceConferenceIdRoute
   '/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
@@ -83,9 +91,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
-  '/attendance': typeof AppAttendanceRoute
+  '/bot-board': typeof AppBotBoardRoute
   '/history': typeof AppHistoryRoute
   '/': typeof AppIndexRoute
+  '/attendance/$conferenceId': typeof AppAttendanceConferenceIdRoute
   '/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
@@ -96,9 +105,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/_app/attendance': typeof AppAttendanceRoute
+  '/_app/bot-board': typeof AppBotBoardRoute
   '/_app/history': typeof AppHistoryRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/attendance/$conferenceId': typeof AppAttendanceConferenceIdRoute
   '/_app/meeting/$meetingId': typeof AppMeetingMeetingIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bot/complete': typeof ApiBotCompleteRoute
@@ -110,8 +120,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
-    | '/attendance'
+    | '/bot-board'
     | '/history'
+    | '/attendance/$conferenceId'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
@@ -120,9 +131,10 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
-    | '/attendance'
+    | '/bot-board'
     | '/history'
     | '/'
+    | '/attendance/$conferenceId'
     | '/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
@@ -132,9 +144,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
-    | '/_app/attendance'
+    | '/_app/bot-board'
     | '/_app/history'
     | '/_app/'
+    | '/_app/attendance/$conferenceId'
     | '/_app/meeting/$meetingId'
     | '/api/auth/$'
     | '/api/bot/complete'
@@ -181,11 +194,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHistoryRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/attendance': {
-      id: '/_app/attendance'
-      path: '/attendance'
-      fullPath: '/attendance'
-      preLoaderRoute: typeof AppAttendanceRouteImport
+    '/_app/bot-board': {
+      id: '/_app/bot-board'
+      path: '/bot-board'
+      fullPath: '/bot-board'
+      preLoaderRoute: typeof AppBotBoardRouteImport
       parentRoute: typeof AppRoute
     }
     '/api/bot/status': {
@@ -223,20 +236,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMeetingMeetingIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/attendance/$conferenceId': {
+      id: '/_app/attendance/$conferenceId'
+      path: '/attendance/$conferenceId'
+      fullPath: '/attendance/$conferenceId'
+      preLoaderRoute: typeof AppAttendanceConferenceIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
-  AppAttendanceRoute: typeof AppAttendanceRoute
+  AppBotBoardRoute: typeof AppBotBoardRoute
   AppHistoryRoute: typeof AppHistoryRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppAttendanceConferenceIdRoute: typeof AppAttendanceConferenceIdRoute
   AppMeetingMeetingIdRoute: typeof AppMeetingMeetingIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAttendanceRoute: AppAttendanceRoute,
+  AppBotBoardRoute: AppBotBoardRoute,
   AppHistoryRoute: AppHistoryRoute,
   AppIndexRoute: AppIndexRoute,
+  AppAttendanceConferenceIdRoute: AppAttendanceConferenceIdRoute,
   AppMeetingMeetingIdRoute: AppMeetingMeetingIdRoute,
 }
 
