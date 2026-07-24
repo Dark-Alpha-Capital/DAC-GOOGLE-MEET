@@ -29,6 +29,7 @@ export function getAuth() {
           'email',
           'profile',
           'https://www.googleapis.com/auth/calendar.readonly',
+          'https://www.googleapis.com/auth/meetings.space.readonly',
         ],
         accessType: 'offline',
         prompt: 'select_account consent',

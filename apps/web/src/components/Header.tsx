@@ -53,6 +53,12 @@ export default function Header({ user }: { user: HeaderUser }) {
             >
               History
             </Link>
+            <Link
+              to="/attendance"
+              className="text-muted-foreground no-underline hover:text-foreground [&.active]:text-foreground [&.active]:underline [&.active]:underline-offset-4"
+            >
+              Attendance
+            </Link>
           </div>
         </div>
 
